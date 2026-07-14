@@ -459,8 +459,9 @@ async function loadData(forceSync){
     LEDGER_MAP = {};
     (DATA.ledgers||[]).forEach(l => LEDGER_MAP[l.company_id+'::'+l.code] = l);
     COMPANIES = DATA.companies || [];
-    if(!ACTIVE_COMPANIES || ![...ACTIVE_COMPANIES].every(id=>COMPANIES.some(c=>c.id===id))){
-      ACTIVE_COMPANIES = new Set(COMPANIES.map(c=>c.id)); // default: all companies selected
+    const availableIds = new Set(COMPANIES.map(c=>c.id));
+    if(ACTIVE_COMPANIES.size === 0 || ![...ACTIVE_COMPANIES].some(id=>availableIds.has(id))){
+      ACTIVE_COMPANIES = new Set(availableIds); // default: all companies selected
     }
     dot.classList.remove('busy');
     txt.textContent = DATA.meta.transaction_count + ' transactions · ' + DATA.meta.companies_count + ' compan' + (DATA.meta.companies_count===1?'y':'ies') + ' · synced';
