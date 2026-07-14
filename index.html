@@ -151,7 +151,7 @@ select:focus,input[type=text]:focus{border-color:var(--gold)}
 .mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);z-index:200;padding:6px 0 max(6px,env(safe-area-inset-bottom))}
 .mobile-nav-inner{display:flex;justify-content:space-around;overflow-x:auto;scrollbar-width:none}
 .mobile-nav-inner::-webkit-scrollbar{display:none}
-.mobile-nav-item{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 4px;border:none;background:none;color:var(--text-3);font-family:var(--sans);font-size:9px;cursor:pointer;flex:1;min-width:0}
+.mobile-nav-item{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 6px;border:none;background:none;color:var(--text-3);font-family:var(--sans);font-size:9px;cursor:pointer;flex:0 0 auto;width:58px;white-space:nowrap}
 .mobile-nav-item.active{color:var(--gold)}
 .mobile-glyph{font-family:var(--serif);font-size:15px;font-weight:600}
 
@@ -160,10 +160,20 @@ select:focus,input[type=text]:focus{border-color:var(--gold)}
   .mobile-nav{display:block}
   .main{padding:18px 16px 92px;max-width:100%}
   .kpi-grid{grid-template-columns:repeat(2,1fr)}
-  .header{padding:0 16px}
+  .header{padding:0 12px;gap:8px}
   .brand-sub{display:none}
   .form-row{flex-direction:column}
+  .user-chip span{display:none}
+  .sync-badge{padding:6px 8px}
+  #syncTxt{display:none}
+  .btn-gold{padding:8px 10px;font-size:0}
+  .btn-gold::before{content:'⟳';font-size:16px}
 }
+@media (max-width:500px){
+  .brand-text{font-size:16px}
+  .header-right{gap:6px}
+}
+html,body{overflow-x:hidden;max-width:100%}
 </style>
 </head>
 <body>
@@ -274,7 +284,7 @@ select:focus,input[type=text]:focus{border-color:var(--gold)}
 
     <div id="tab-pnl" class="section">
       <div class="page-header"><div class="page-title">Profit &amp; Loss</div><div class="page-sub">Income vs. expense, classified from your actual chart of accounts</div></div>
-      <div class="form-row" style="margin-bottom:6px"><div class="form-group" style="max-width:220px"><label class="form-label">Period</label><select id="fs-period-pnl" onchange="renderFinancialStatement('pnl')"></select></div></div>
+      <div class="form-group" style="margin-bottom:14px"><label class="form-label">Period — pick one or more months, or leave on Full Year</label><div id="fs-chips-pnl" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
       <div class="card"><div id="pnlBody"></div></div>
     </div>
 
@@ -287,7 +297,7 @@ select:focus,input[type=text]:focus{border-color:var(--gold)}
     <div id="tab-cashflow" class="section">
       <div class="page-header"><div class="page-title">Cash Flow</div><div class="page-sub">Net movement through Bank and Cash accounts</div></div>
       <div class="card" style="background:var(--surface-2);margin-bottom:16px"><p style="font-size:12px;color:var(--text-2);line-height:1.6">This is a simplified cash summary (opening → net movement → closing), not a formal Operating/Investing/Financing statement — the underlying data doesn't reliably pair each voucher's two sides, so that split isn't shown here to avoid presenting a guess as fact.</p></div>
-      <div class="form-row" style="margin-bottom:6px"><div class="form-group" style="max-width:220px"><label class="form-label">Period</label><select id="fs-period-cashflow" onchange="renderFinancialStatement('cashflow')"></select></div></div>
+      <div class="form-group" style="margin-bottom:14px"><label class="form-label">Period — pick one or more months, or leave on Full Year</label><div id="fs-chips-cashflow" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
       <div class="card"><div id="cashFlowBody"></div></div>
     </div>
 
@@ -484,7 +494,8 @@ function toast(msg, isError){
 function monthsInData(){ return DATA.months || (DATA._months ||= [...new Set(DATA.transactions.map(t=>t.date.slice(0,7)))].sort()); }
 function txByCodesAndMonth(codes, month){
   const set = new Set(codes);
-  return DATA.transactions.filter(t => set.has(t.code) && (!month || t.date.startsWith(month)));
+  const monthArr = Array.isArray(month) ? month : (month ? [month] : null);
+  return DATA.transactions.filter(t => set.has(t.code) && (!monthArr || monthArr.some(m=>t.date.startsWith(m))));
 }
 function sumSeries(codes, months, metric){
   const set = new Set(codes);
@@ -864,12 +875,13 @@ function perLedgerSumsUpTo(codes, asOfMonth){
   });
   return out;
 }
-function perLedgerSumsForPeriod(codes, month){
+function perLedgerSumsForPeriod(codes, months){
+  const monthSet = months && months.length ? new Set(months) : null;
   const out={}; codes.forEach(c=>out[c]={cr:0,dr:0});
   const set=new Set(codes);
   DATA.transactions.forEach(t=>{
     if(!set.has(t.code)) return;
-    if(month && t.date.slice(0,7)!==month) return;
+    if(monthSet && !monthSet.has(t.date.slice(0,7))) return;
     out[t.code].cr+=t.cr; out[t.code].dr+=t.dr;
   });
   return out;
@@ -882,21 +894,44 @@ function computeNetProfitUpTo(asOfMonth){
   let totalI=0; iC.forEach(c=>totalI+=i[c].dr-i[c].cr);
   return totalInc - totalD - totalI;
 }
+const finMultiSelection = { pnl: null, cashflow: null }; // null = Full Year, else Set of 'YYYY-MM'
+function renderPeriodChips(kind){
+  const months = monthsInData();
+  const sel = finMultiSelection[kind];
+  const wrap = document.getElementById('fs-chips-'+kind);
+  if(!wrap) return;
+  const chipHtml = (label, active, onclick) =>
+    `<span onclick="${onclick}" style="cursor:pointer;display:inline-flex;align-items:center;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;border:1px solid ${active?'rgba(156,122,46,0.3)':'var(--border)'};background:${active?'var(--gold-dim)':'var(--surface-2)'};color:${active?'var(--gold)':'var(--text-2)'}">${label}</span>`;
+  let html = chipHtml('Full Year', sel===null, `setFinFullYear('${kind}')`);
+  months.forEach(m=>{
+    html += chipHtml(monthLabel(m), !!(sel && sel.has(m)), `toggleFinMonth('${kind}','${m}')`);
+  });
+  wrap.innerHTML = html;
+}
+function setFinFullYear(kind){ finMultiSelection[kind]=null; renderPeriodChips(kind); renderFinancialStatement(kind); }
+function toggleFinMonth(kind, m){
+  if(!finMultiSelection[kind]) finMultiSelection[kind] = new Set();
+  if(finMultiSelection[kind].has(m)) finMultiSelection[kind].delete(m); else finMultiSelection[kind].add(m);
+  if(finMultiSelection[kind].size===0) finMultiSelection[kind]=null;
+  renderPeriodChips(kind);
+  renderFinancialStatement(kind);
+}
 function populateFinPeriodSelectors(){
   const months = monthsInData();
-  ['trialbalance','pnl','balancesheet','cashflow'].forEach(kind=>{
+  ['trialbalance','balancesheet'].forEach(kind=>{
     const el = document.getElementById('fs-period-'+kind);
     if(!el) return;
     el.innerHTML = `<option value="">Full Year</option>` + months.map(m=>`<option value="${m}">${monthLabel(m)}</option>`).join('');
   });
+  renderPeriodChips('pnl');
+  renderPeriodChips('cashflow');
 }
 function getPeriodValue(kind){ const el=document.getElementById('fs-period-'+kind); return el && el.value ? el.value : null; }
 function renderFinancialStatement(kind){
-  const period = getPeriodValue(kind);
-  if(kind==='trialbalance') renderTrialBalance(period);
-  else if(kind==='pnl') renderPnL(period);
-  else if(kind==='balancesheet') renderBalanceSheet(period);
-  else if(kind==='cashflow') renderCashFlow(period);
+  if(kind==='trialbalance') renderTrialBalance(getPeriodValue('trialbalance'));
+  else if(kind==='balancesheet') renderBalanceSheet(getPeriodValue('balancesheet'));
+  else if(kind==='pnl') renderPnL(finMultiSelection.pnl ? [...finMultiSelection.pnl] : null);
+  else if(kind==='cashflow') renderCashFlow(finMultiSelection.cashflow ? [...finMultiSelection.cashflow] : null);
 }
 
 function renderTrialBalance(asOfMonth){
@@ -918,9 +953,9 @@ function renderTrialBalance(asOfMonth){
     <div style="margin-top:10px;font-size:12px;color:${diff<1?'var(--credit)':'var(--debit)'}">${diff<1 ? '✓ Debits equal credits' : '⚠ Difference of ₹'+fmt(diff)+' — some ledgers may not be classified as expected'}</div>`;
 }
 
-function renderPnL(month){
+function renderPnL(months){
   const incC = ledgersOfAtype(ATYPE_INCOME), dC = ledgersOfAtype(ATYPE_EXP_DIRECT), iC = ledgersOfAtype(ATYPE_EXP_INDIRECT);
-  const inc = perLedgerSumsForPeriod(incC, month), d = perLedgerSumsForPeriod(dC, month), i = perLedgerSumsForPeriod(iC, month);
+  const inc = perLedgerSumsForPeriod(incC, months), d = perLedgerSumsForPeriod(dC, months), i = perLedgerSumsForPeriod(iC, months);
   let totalIncome=0; const incRows=[];
   incC.forEach(c=>{ const v=inc[c].cr-inc[c].dr; if(Math.abs(v)<0.5) return; totalIncome+=v; incRows.push({code:c,name:LEDGER_MAP[c].name||c,v}); });
   let totalD=0; const dRows=[];
@@ -930,7 +965,7 @@ function renderPnL(month){
   incRows.sort((a,b)=>b.v-a.v); dRows.sort((a,b)=>b.v-a.v); iRows.sort((a,b)=>b.v-a.v);
   const grossProfit = totalIncome - totalD;
   const netProfit = grossProfit - totalI;
-  const mArg = month ? `"${month}"` : 'null';
+  const mArg = months && months.length ? JSON.stringify(months) : 'null';
   const section = (title,rows,total,colorClass) => `
     <div style="margin-bottom:18px">
       <div style="font-family:var(--serif);font-size:15px;font-weight:600;margin-bottom:8px">${title}</div>
@@ -1010,28 +1045,32 @@ function renderBalanceSheet(asOfMonth){
     <div style="margin-top:8px;font-size:12px;color:${diff<2?'var(--credit)':'var(--debit)'}">${diff<2 ? '✓ Balances' : '⚠ Off by ₹'+fmt(diff)+' — check Trial Balance for any ledger that looks unclassified'}</div>`;
 }
 
-function renderCashFlow(month){
+function renderCashFlow(monthsSel){
   const bankCashCodes = ledgersOfAtype([...ATYPE_BANK, ...ATYPE_CASH]);
   const set = new Set(bankCashCodes);
   const months = monthsInData();
-  const periodStart = month || months[0];
+  const chosen = monthsSel && monthsSel.length ? [...monthsSel].sort() : null;
+  const chosenSet = chosen ? new Set(chosen) : null;
+  const periodStart = chosen ? chosen[0] : months[0];
   let openingBal = 0;
   DATA.transactions.forEach(t=>{ if(set.has(t.code) && t.date.slice(0,7) < periodStart) openingBal += (t.dr-t.cr); });
   let netMove = 0;
-  DATA.transactions.forEach(t=>{ if(!set.has(t.code)) return; if(month && t.date.slice(0,7)!==month) return; netMove += (t.dr-t.cr); });
+  DATA.transactions.forEach(t=>{ if(!set.has(t.code)) return; const m=t.date.slice(0,7); if(chosenSet ? chosenSet.has(m) : true) netMove += (t.dr-t.cr); });
   const closingBal = openingBal + netMove;
-  let running = openingBal;
+  let running = 0;
   const rowsHtml = months.map(m=>{
     let net=0; DATA.transactions.forEach(t=>{ if(set.has(t.code) && t.date.slice(0,7)===m) net+=(t.dr-t.cr); });
     running += net;
-    return `<tr onclick='openDrill("Bank + Cash",${JSON.stringify(monthLabel(m))},${JSON.stringify(bankCashCodes)},"${m}")'><td>${monthLabel(m)}</td><td class="num ${net>=0?'credit':'debit'}">${fmtSigned(net)}</td><td class="num">${fmtSigned(running)}</td></tr>`;
+    const dim = chosenSet && !chosenSet.has(m) ? 'opacity:0.4' : '';
+    return `<tr style="${dim}" onclick='openDrill("Bank + Cash",${JSON.stringify(monthLabel(m))},${JSON.stringify(bankCashCodes)},"${m}")'><td>${monthLabel(m)}</td><td class="num ${net>=0?'credit':'debit'}">${fmtSigned(net)}</td><td class="num">${fmtSigned(running)}</td></tr>`;
   }).join('');
   document.getElementById('cashFlowBody').innerHTML = `
     <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px">
-      <div class="kpi-card"><div class="kpi-label">Opening</div><div class="kpi-value">${fmtSigned(openingBal)}</div></div>
-      <div class="kpi-card"><div class="kpi-label">Net Movement</div><div class="kpi-value ${netMove>=0?'credit':'debit'}">${fmtSigned(netMove)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Opening${chosen?' (before selection)':''}</div><div class="kpi-value">${fmtSigned(openingBal)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Net Movement${chosen?' (selected months)':''}</div><div class="kpi-value ${netMove>=0?'credit':'debit'}">${fmtSigned(netMove)}</div></div>
       <div class="kpi-card"><div class="kpi-label">Closing</div><div class="kpi-value gold">${fmtSigned(closingBal)}</div></div>
     </div>
+    <div class="card-hint" style="margin-bottom:8px">${chosen ? 'Faded rows are outside your selected months — shown for context, not included in the totals above.' : 'Full-year monthly trend, cumulative running balance.'}</div>
     <table class="ldg-table"><thead><tr><th>Month</th><th class="num">Net Movement</th><th class="num">Cumulative</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
 }
 </script>
