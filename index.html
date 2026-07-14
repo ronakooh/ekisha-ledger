@@ -209,6 +209,8 @@ html,body{overflow-x:hidden;max-width:100%}
   </div>
 </header>
 
+<div id="companyFilterBar" style="display:none;gap:8px;flex-wrap:wrap;padding:12px 24px;background:var(--surface-2);border-bottom:1px solid var(--border)"></div>
+
 <div class="layout">
   <aside class="sidebar">
     <span class="nav-label">Dashboard</span>
@@ -241,7 +243,7 @@ html,body{overflow-x:hidden;max-width:100%}
     <div id="tab-revenue" class="section">
       <div class="page-header"><div class="page-title">Revenue by Channel</div><div class="page-sub">Website · Myntra · Amazon · Flipkart · Meesho · Ajio</div></div>
       <div class="card"><div class="card-title">Monthly revenue by channel</div><div class="card-hint">Click a point to drill into that month</div><div class="chart-wrap tall" id="wrapRevMonthly"><canvas id="chartRevMonthly"></canvas></div></div>
-      <div class="card"><div class="card-title">Channel totals (FY 2025–26)</div><div class="chart-wrap" id="wrapRevTotals"><canvas id="chartRevTotals"></canvas></div></div>
+      <div class="card"><div class="card-title">Channel totals (all data)</div><div class="chart-wrap" id="wrapRevTotals"><canvas id="chartRevTotals"></canvas></div></div>
       <div class="card"><div class="card-title">Channel breakdown table</div><div class="card-hint">Click a row to see every transaction</div><div id="revTable"></div></div>
     </div>
 
@@ -259,7 +261,7 @@ html,body{overflow-x:hidden;max-width:100%}
     </div>
 
     <div id="tab-expenses" class="section">
-      <div class="page-header"><div class="page-title">Expenses</div><div class="page-sub">Top expense categories, FY 2025–26</div></div>
+      <div class="page-header"><div class="page-title">Expenses</div><div class="page-sub">Top expense categories, across all data</div></div>
       <div class="card"><div class="card-title">Top expense categories</div><div class="card-hint">Click a bar to see every entry</div><div class="chart-wrap tall" id="wrapExpTop"><canvas id="chartExpTop"></canvas></div></div>
       <div class="card"><div class="card-title">Monthly trend — top 4 categories</div><div class="chart-wrap" id="wrapExpTrend"><canvas id="chartExpTrend"></canvas></div></div>
     </div>
@@ -325,7 +327,8 @@ html,body{overflow-x:hidden;max-width:100%}
       <div class="page-header"><div class="page-title">Settings &amp; Sync</div><div class="page-sub">Data source and security status</div></div>
       <div class="card">
         <div class="card-title">Data source</div>
-        <p style="font-size:13px;color:var(--text-2);line-height:1.7">Live from <code style="font-family:var(--mono);background:var(--surface-2);padding:2px 6px;border-radius:4px" id="sourceFile">—</code>, last parsed <span id="sourceGenerated">—</span>. "Pull latest backup" re-runs the Drive → parse → store pipeline on the backend, then reloads this page's data.</p>
+        <p style="font-size:13px;color:var(--text-2);line-height:1.6;margin-bottom:10px">"Pull latest backup" parses <strong style="color:var(--text)">every</strong> backup file sitting in the Drive folder — not just the newest — and merges them by company (matched on GSTIN, so multiple years of the same company combine into one continuous history). Last parsed <span id="sourceGenerated">—</span>.</p>
+        <div id="sourceFile" style="font-family:var(--mono);font-size:11.5px;background:var(--surface-2);border-radius:8px;padding:10px 12px;line-height:1.8">—</div>
       </div>
       <div class="card">
         <div class="card-title">Security status</div>
@@ -380,8 +383,10 @@ const GOOGLE_CLIENT_ID = "914256283099-d7alg61t6epkb7c7kae91d905p17rkds.apps.goo
 const SERVICE_URL = "https://ekisha-ledger-api-914256283099.asia-south1.run.app";
 
 let ID_TOKEN = null;
-let DATA = null;            // {meta, ledgers[], transactions[]}
-let LEDGER_MAP = {};         // code -> {name, atype}
+let DATA = null;            // {meta, companies[], ledgers[], transactions[]}
+let LEDGER_MAP = {};         // "company_id::code" -> {company_id, code, name, atype}
+let COMPANIES = [];          // [{id, name, gstin, source_files, period_start, period_end}]
+let ACTIVE_COMPANIES = new Set(); // company ids currently included in every view
 const charts = {};
 const fmt = n => Math.round(n).toLocaleString('en-IN');
 const fmtSigned = n => (n<0?'-':'')+'₹'+Math.abs(Math.round(n)).toLocaleString('en-IN');
@@ -443,23 +448,26 @@ async function loadData(forceSync){
   const dot = document.getElementById('syncDot'), txt = document.getElementById('syncTxt');
   try{
     if(forceSync){
-      showLoading('Pulling latest backup from Drive…');
+      showLoading('Pulling every backup from Drive…');
       dot.classList.add('busy'); txt.textContent = 'Syncing…';
       await apiCall('/sync', 'POST');
     }
     showLoading('Loading ledger data…');
     const cube = await apiCall('/data', 'GET');
     DATA = cube;
+    (DATA.transactions||[]).forEach(t => t.ckey = t.company_id+'::'+t.code);
     LEDGER_MAP = {};
-    (DATA.ledgers||[]).forEach(l => LEDGER_MAP[l.code] = l);
+    (DATA.ledgers||[]).forEach(l => LEDGER_MAP[l.company_id+'::'+l.code] = l);
+    COMPANIES = DATA.companies || [];
+    if(!ACTIVE_COMPANIES || ![...ACTIVE_COMPANIES].every(id=>COMPANIES.some(c=>c.id===id))){
+      ACTIVE_COMPANIES = new Set(COMPANIES.map(c=>c.id)); // default: all companies selected
+    }
     dot.classList.remove('busy');
-    txt.textContent = DATA.meta.transaction_count + ' transactions · synced';
-    document.getElementById('sourceFile').textContent = DATA.meta.source_file || '—';
+    txt.textContent = DATA.meta.transaction_count + ' transactions · ' + DATA.meta.companies_count + ' compan' + (DATA.meta.companies_count===1?'y':'ies') + ' · synced';
+    renderCompanyFilterBar();
+    document.getElementById('sourceFile').innerHTML = (DATA.meta.sync_summary||[]).map(s=>`${s.source_file} <span style="color:var(--text-3)">(${s.company}, ${s.transaction_count} txns)</span>`).join('<br>') || '—';
     document.getElementById('sourceGenerated').textContent = DATA.meta.generated_at ? new Date(DATA.meta.generated_at).toLocaleString('en-IN') : '—';
-    renderAll();
-    renderLedgerSearch();
-    renderSavedReports();
-    populateFinPeriodSelectors();
+    refreshEverything();
     toast(forceSync ? 'Synced and reloaded' : 'Loaded');
   }catch(err){
     dot.classList.remove('busy'); txt.textContent = 'Error';
@@ -470,6 +478,33 @@ async function loadData(forceSync){
   }
 }
 async function pullFromDrive(){ await loadData(true); }
+function refreshEverything(){
+  renderAll();
+  ['trialbalance','pnl','balancesheet','cashflow'].forEach(renderFinancialStatement);
+  renderLedgerSearch();
+  renderSavedReports();
+  populateFinPeriodSelectors();
+}
+
+/* ============ COMPANY FILTER ============ */
+function renderCompanyFilterBar(){
+  const bar = document.getElementById('companyFilterBar');
+  if(!bar) return;
+  if(COMPANIES.length <= 1){ bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  bar.innerHTML = COMPANIES.map(c=>{
+    const active = ACTIVE_COMPANIES.has(c.id);
+    return `<span onclick="toggleCompany('${c.id}')" style="cursor:pointer;display:inline-flex;align-items:center;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;border:1px solid ${active?'rgba(156,122,46,0.3)':'var(--border)'};background:${active?'var(--gold-dim)':'var(--surface-2)'};color:${active?'var(--gold)':'var(--text-2)'}">${c.name}</span>`;
+  }).join('');
+}
+function toggleCompany(id){
+  if(ACTIVE_COMPANIES.has(id)){
+    if(ACTIVE_COMPANIES.size===1){ toast('At least one company must stay selected', true); return; }
+    ACTIVE_COMPANIES.delete(id);
+  } else ACTIVE_COMPANIES.add(id);
+  renderCompanyFilterBar();
+  refreshEverything();
+}
 
 /* ============ UI HELPERS ============ */
 function tabIdFromOnclick(el){
@@ -491,17 +526,17 @@ function toast(msg, isError){
 }
 
 /* ============ DATA UTILITIES ============ */
-function monthsInData(){ return DATA.months || (DATA._months ||= [...new Set(DATA.transactions.map(t=>t.date.slice(0,7)))].sort()); }
+function monthsInData(){ return DATA._months ||= [...new Set(DATA.transactions.map(t=>t.date.slice(0,7)))].sort(); }
 function txByCodesAndMonth(codes, month){
   const set = new Set(codes);
   const monthArr = Array.isArray(month) ? month : (month ? [month] : null);
-  return DATA.transactions.filter(t => set.has(t.code) && (!monthArr || monthArr.some(m=>t.date.startsWith(m))));
+  return DATA.transactions.filter(t => set.has(t.ckey) && (!monthArr || monthArr.some(m=>t.date.startsWith(m))));
 }
 function sumSeries(codes, months, metric){
   const set = new Set(codes);
   const out = {}; months.forEach(m=>out[m]=0);
   DATA.transactions.forEach(t=>{
-    if(!set.has(t.code)) return;
+    if(!set.has(t.ckey)) return;
     const m = t.date.slice(0,7);
     if(!(m in out)) return;
     if(metric==='cr') out[m]+=t.cr;
@@ -514,17 +549,22 @@ function sumSeries(codes, months, metric){
 function totalFor(codes, metric){
   const set = new Set(codes); let s=0;
   DATA.transactions.forEach(t=>{
-    if(!set.has(t.code)) return;
+    if(!set.has(t.ckey)) return;
     if(metric==='cr') s+=t.cr; else if(metric==='dr') s+=t.dr; else if(metric==='count') s+=1; else s+=(t.cr-t.dr);
   });
   return s;
 }
 function codesByNameContains(sub){
   sub = sub.toUpperCase();
-  return Object.keys(LEDGER_MAP).filter(c => (LEDGER_MAP[c].name||'').toUpperCase().includes(sub));
+  return Object.keys(LEDGER_MAP).filter(c => ACTIVE_COMPANIES.has(LEDGER_MAP[c].company_id) && (LEDGER_MAP[c].name||'').toUpperCase().includes(sub));
 }
 function codesByAtype(atype){
-  return Object.keys(LEDGER_MAP).filter(c => LEDGER_MAP[c].atype === atype);
+  return Object.keys(LEDGER_MAP).filter(c => ACTIVE_COMPANIES.has(LEDGER_MAP[c].company_id) && LEDGER_MAP[c].atype === atype);
+}
+function ledgerDisplayName(ckey){
+  const l = LEDGER_MAP[ckey];
+  if(!l) return ckey;
+  return COMPANIES.length > 1 ? `${l.name} — ${(COMPANIES.find(c=>c.id===l.company_id)||{}).name||''}` : (l.name||ckey);
 }
 
 /* Known category definitions, resolved dynamically against this FY's ledger names */
@@ -653,7 +693,7 @@ function renderAll(){
 
   document.getElementById('overviewPeriod').textContent = `${monthLabel(months[0])} – ${monthLabel(months[months.length-1])}`;
   document.getElementById('kpiGrid').innerHTML = `
-    <div class="kpi-card"><div class="kpi-label">Total Revenue</div><div class="kpi-value credit">${fmtSigned(totalRevenue)}</div><div class="kpi-note">All channels, FY25-26</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Revenue</div><div class="kpi-value credit">${fmtSigned(totalRevenue)}</div><div class="kpi-note">All channels, selected period</div></div>
     <div class="kpi-card"><div class="kpi-label">Total Ad Spend</div><div class="kpi-value debit">${fmtSigned(totalAds)}</div><div class="kpi-note">${totalRevenue?(totalAds/totalRevenue*100).toFixed(1):'0'}% of revenue</div></div>
     <div class="kpi-card"><div class="kpi-label">Net Bank Position</div><div class="kpi-value ${netBank>=0?'credit':'debit'}">${fmtSigned(netBank)}</div><div class="kpi-note">HDFC, cumulative</div></div>
     <div class="kpi-card"><div class="kpi-label">Vendor Payables</div><div class="kpi-value gold">${fmtSigned(topVendors.reduce((s,[,v])=>s+v,0))}</div><div class="kpi-note">Outstanding, top 10</div></div>`;
@@ -717,23 +757,23 @@ function renderAll(){
     ${gstNames.map((g,i)=>`<tr onclick='openDrill("${g}","Full FY",${JSON.stringify(gst[g])},null)'><td>${g}</td><td class="num ${gstTotals[i]>=0?'debit':'credit'}">${fmtSigned(gstTotals[i])}</td></tr>`).join('')}
   </tbody></table>`;
 
-  const expNames = topExpNames.map(c=>LEDGER_MAP[c]?.name || c);
+  const expNames = topExpNames.map(c=>ledgerDisplayName(c));
   const expVals = topExpNames.map(c=>expByLedger[c]);
   destroyChart('exp1');
   charts.exp1 = makeHBar(document.getElementById('chartExpTop'), expNames, expVals, DEBIT, topExpNames.map(c=>[c]));
   const top4 = topExpNames.slice(0,4);
   destroyChart('exp2');
-  const expLookup={}; top4.forEach(c=>expLookup[LEDGER_MAP[c]?.name||c]=[c]);
+  const expLookup={}; top4.forEach(c=>expLookup[ledgerDisplayName(c)]=[c]);
   charts.exp2 = makeClickableLine(document.getElementById('chartExpTrend'), mLabels,
-    top4.map((c,i)=>({label:LEDGER_MAP[c]?.name||c,data:months.map(m=>sumSeries([c],[m],'net')[m]||0),borderColor:PALETTE[i%PALETTE.length],backgroundColor:'transparent',tension:0.3})),
+    top4.map((c,i)=>({label:ledgerDisplayName(c),data:months.map(m=>sumSeries([c],[m],'net')[m]||0),borderColor:PALETTE[i%PALETTE.length],backgroundColor:'transparent',tension:0.3})),
     months, expLookup);
 
-  const vNames = topVendors.map(([c])=>LEDGER_MAP[c]?.name || c);
+  const vNames = topVendors.map(([c])=>ledgerDisplayName(c));
   const vVals = topVendors.map(([,v])=>v);
   destroyChart('vnd1');
   charts.vnd1 = makeHBar(document.getElementById('chartVendors'), vNames, vVals, GOLD, topVendors.map(([c])=>[c]));
   document.getElementById('vendorTable').innerHTML = `<table class="ldg-table"><thead><tr><th>Vendor</th><th class="num">Outstanding</th></tr></thead><tbody>
-    ${topVendors.map(([c,v])=>`<tr onclick='openDrill("${LEDGER_MAP[c]?.name||c}","Full FY",${JSON.stringify([c])},null)'><td>${LEDGER_MAP[c]?.name||c}</td><td class="num" style="color:${v>=0?'var(--gold)':'var(--credit)'}">${fmtSigned(v)}</td></tr>`).join('')}
+    ${topVendors.map(([c,v])=>`<tr onclick='openDrill("${ledgerDisplayName(c)}","Full FY",${JSON.stringify([c])},null)'><td>${ledgerDisplayName(c)}</td><td class="num" style="color:${v>=0?'var(--gold)':'var(--credit)'}">${fmtSigned(v)}</td></tr>`).join('')}
   </tbody></table>`;
 
   destroyChart('bnk1');
@@ -754,15 +794,15 @@ function renderLedgerSearch(){
   if(!DATA) return;
   const q = (document.getElementById('rb-search').value||'').trim().toUpperCase();
   const box = document.getElementById('rb-ledger-list');
-  const matches = Object.keys(LEDGER_MAP).filter(c => !q || (LEDGER_MAP[c].name||'').toUpperCase().includes(q)).slice(0,60);
+  const matches = Object.keys(LEDGER_MAP).filter(c => ACTIVE_COMPANIES.has(LEDGER_MAP[c].company_id) && (!q || (LEDGER_MAP[c].name||'').toUpperCase().includes(q))).slice(0,60);
   box.innerHTML = matches.map(c=>{
     const checked = rbSelected.has(c) ? 'checked' : '';
-    return `<label class="ledger-opt"><input type="checkbox" ${checked} onchange="toggleLedger('${c}')"><span>${LEDGER_MAP[c].name || c}</span></label>`;
+    return `<label class="ledger-opt"><input type="checkbox" ${checked} onchange="toggleLedger('${c}')"><span>${ledgerDisplayName(c)}</span></label>`;
   }).join('') || `<div style="padding:14px;font-size:12px;color:var(--text-3)">No ledgers match</div>`;
   renderChips();
 }
 function toggleLedger(code){
-  if(rbSelected.has(code)) rbSelected.delete(code); else rbSelected.set(code, LEDGER_MAP[code]?.name || code);
+  if(rbSelected.has(code)) rbSelected.delete(code); else rbSelected.set(code, ledgerDisplayName(code));
   renderLedgerSearch();
 }
 function renderChips(){
@@ -863,15 +903,15 @@ const ATYPE_MIXED21 = ['21'];
 const ATYPE_GST_MIXED = ['99'];
 const ATYPE_PARTY = ['12','17','106','113'];
 
-function ledgersOfAtype(list){ return Object.keys(LEDGER_MAP).filter(c=>list.includes(LEDGER_MAP[c].atype)); }
+function ledgersOfAtype(list){ return Object.keys(LEDGER_MAP).filter(c=>ACTIVE_COMPANIES.has(LEDGER_MAP[c].company_id) && list.includes(LEDGER_MAP[c].atype)); }
 
 function perLedgerSumsUpTo(codes, asOfMonth){
   const out={}; codes.forEach(c=>out[c]={cr:0,dr:0});
   const set=new Set(codes);
   DATA.transactions.forEach(t=>{
-    if(!set.has(t.code)) return;
+    if(!set.has(t.ckey)) return;
     if(asOfMonth && t.date.slice(0,7) > asOfMonth) return;
-    out[t.code].cr+=t.cr; out[t.code].dr+=t.dr;
+    out[t.ckey].cr+=t.cr; out[t.ckey].dr+=t.dr;
   });
   return out;
 }
@@ -880,9 +920,9 @@ function perLedgerSumsForPeriod(codes, months){
   const out={}; codes.forEach(c=>out[c]={cr:0,dr:0});
   const set=new Set(codes);
   DATA.transactions.forEach(t=>{
-    if(!set.has(t.code)) return;
+    if(!set.has(t.ckey)) return;
     if(monthSet && !monthSet.has(t.date.slice(0,7))) return;
-    out[t.code].cr+=t.cr; out[t.code].dr+=t.dr;
+    out[t.ckey].cr+=t.cr; out[t.ckey].dr+=t.dr;
   });
   return out;
 }
@@ -935,7 +975,7 @@ function renderFinancialStatement(kind){
 }
 
 function renderTrialBalance(asOfMonth){
-  const codes = Object.keys(LEDGER_MAP);
+  const codes = Object.keys(LEDGER_MAP).filter(c=>ACTIVE_COMPANIES.has(LEDGER_MAP[c].company_id));
   const sums = perLedgerSumsUpTo(codes, asOfMonth);
   let totalDr=0, totalCr=0; const rows=[];
   codes.forEach(code=>{
@@ -943,7 +983,7 @@ function renderTrialBalance(asOfMonth){
     if(Math.abs(net) < 0.5) return;
     const drBal = net>0?net:0, crBal = net<0?-net:0;
     totalDr+=drBal; totalCr+=crBal;
-    rows.push({name:LEDGER_MAP[code].name||code, code, drBal, crBal});
+    rows.push({name:ledgerDisplayName(code), code, drBal, crBal});
   });
   rows.sort((a,b)=>a.name.localeCompare(b.name));
   const diff = Math.abs(totalDr-totalCr);
@@ -957,11 +997,11 @@ function renderPnL(months){
   const incC = ledgersOfAtype(ATYPE_INCOME), dC = ledgersOfAtype(ATYPE_EXP_DIRECT), iC = ledgersOfAtype(ATYPE_EXP_INDIRECT);
   const inc = perLedgerSumsForPeriod(incC, months), d = perLedgerSumsForPeriod(dC, months), i = perLedgerSumsForPeriod(iC, months);
   let totalIncome=0; const incRows=[];
-  incC.forEach(c=>{ const v=inc[c].cr-inc[c].dr; if(Math.abs(v)<0.5) return; totalIncome+=v; incRows.push({code:c,name:LEDGER_MAP[c].name||c,v}); });
+  incC.forEach(c=>{ const v=inc[c].cr-inc[c].dr; if(Math.abs(v)<0.5) return; totalIncome+=v; incRows.push({code:c,name:ledgerDisplayName(c),v}); });
   let totalD=0; const dRows=[];
-  dC.forEach(c=>{ const v=d[c].dr-d[c].cr; if(Math.abs(v)<0.5) return; totalD+=v; dRows.push({code:c,name:LEDGER_MAP[c].name||c,v}); });
+  dC.forEach(c=>{ const v=d[c].dr-d[c].cr; if(Math.abs(v)<0.5) return; totalD+=v; dRows.push({code:c,name:ledgerDisplayName(c),v}); });
   let totalI=0; const iRows=[];
-  iC.forEach(c=>{ const v=i[c].dr-i[c].cr; if(Math.abs(v)<0.5) return; totalI+=v; iRows.push({code:c,name:LEDGER_MAP[c].name||c,v}); });
+  iC.forEach(c=>{ const v=i[c].dr-i[c].cr; if(Math.abs(v)<0.5) return; totalI+=v; iRows.push({code:c,name:ledgerDisplayName(c),v}); });
   incRows.sort((a,b)=>b.v-a.v); dRows.sort((a,b)=>b.v-a.v); iRows.sort((a,b)=>b.v-a.v);
   const grossProfit = totalIncome - totalD;
   const netProfit = grossProfit - totalI;
@@ -984,7 +1024,7 @@ function renderPnL(months){
 function renderBalanceSheet(asOfMonth){
   const assets={}, liabilities={}, equity={};
   const addTo=(bucket,group,amount)=>{ bucket[group]=(bucket[group]||0)+amount; };
-  const allCodes = Object.keys(LEDGER_MAP);
+  const allCodes = Object.keys(LEDGER_MAP).filter(c=>ACTIVE_COMPANIES.has(LEDGER_MAP[c].company_id));
   const sums = perLedgerSumsUpTo(allCodes, asOfMonth);
 
   allCodes.forEach(code=>{
@@ -1053,13 +1093,13 @@ function renderCashFlow(monthsSel){
   const chosenSet = chosen ? new Set(chosen) : null;
   const periodStart = chosen ? chosen[0] : months[0];
   let openingBal = 0;
-  DATA.transactions.forEach(t=>{ if(set.has(t.code) && t.date.slice(0,7) < periodStart) openingBal += (t.dr-t.cr); });
+  DATA.transactions.forEach(t=>{ if(set.has(t.ckey) && t.date.slice(0,7) < periodStart) openingBal += (t.dr-t.cr); });
   let netMove = 0;
-  DATA.transactions.forEach(t=>{ if(!set.has(t.code)) return; const m=t.date.slice(0,7); if(chosenSet ? chosenSet.has(m) : true) netMove += (t.dr-t.cr); });
+  DATA.transactions.forEach(t=>{ if(!set.has(t.ckey)) return; const m=t.date.slice(0,7); if(chosenSet ? chosenSet.has(m) : true) netMove += (t.dr-t.cr); });
   const closingBal = openingBal + netMove;
   let running = 0;
   const rowsHtml = months.map(m=>{
-    let net=0; DATA.transactions.forEach(t=>{ if(set.has(t.code) && t.date.slice(0,7)===m) net+=(t.dr-t.cr); });
+    let net=0; DATA.transactions.forEach(t=>{ if(set.has(t.ckey) && t.date.slice(0,7)===m) net+=(t.dr-t.cr); });
     running += net;
     const dim = chosenSet && !chosenSet.has(m) ? 'opacity:0.4' : '';
     return `<tr style="${dim}" onclick='openDrill("Bank + Cash",${JSON.stringify(monthLabel(m))},${JSON.stringify(bankCashCodes)},"${m}")'><td>${monthLabel(m)}</td><td class="num ${net>=0?'credit':'debit'}">${fmtSigned(net)}</td><td class="num">${fmtSigned(running)}</td></tr>`;
