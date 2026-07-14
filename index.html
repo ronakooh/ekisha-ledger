@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledger — Ekisha Financials</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+:root{
+  --bg:#ffffff;
+  --surface:#ffffff;
+  --surface-2:#f7f6f2;
+  --surface-3:#f0eee6;
+  --border:#e6e1d6;
+  --border-soft:#efece3;
+  --credit:#1f7a4d;
+  --credit-dim:rgba(31,122,77,0.08);
+  --debit:#a83f28;
+  --debit-dim:rgba(168,63,40,0.08);
+  --gold:#9c7a2e;
+  --gold-dim:rgba(156,122,46,0.10);
+  --text:#1c1a17;
+  --text-2:#696255;
+  --text-3:#a29a8c;
+  --serif:'Fraunces',serif;
+  --sans:'Inter',sans-serif;
+  --mono:'JetBrains Mono',monospace;
+  --radius:10px;
+  --radius-lg:16px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh;font-size:14px;line-height:1.5}
+::selection{background:var(--gold-dim);color:var(--gold)}
+
+/* ── SIGN-IN SCREEN ── */
+#signinScreen{position:fixed;inset:0;background:var(--surface-2);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px}
+.signin-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:44px 40px;width:100%;max-width:400px;text-align:center;box-shadow:0 20px 50px rgba(28,26,23,0.08)}
+.signin-stamp{width:64px;height:64px;border:2px solid var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;color:var(--gold);font-family:var(--serif);font-size:11px;font-weight:600;transform:rotate(-8deg);line-height:1.2}
+.signin-title{font-family:var(--serif);font-size:25px;font-weight:600;margin-bottom:6px}
+.signin-sub{font-size:13px;color:var(--text-2);margin-bottom:28px}
+#gsiButton{display:flex;justify-content:center;margin-bottom:18px}
+.signin-note{font-size:11.5px;color:var(--text-3);line-height:1.6}
+.signin-error{font-size:13px;color:var(--debit);margin-top:14px;display:none}
+
+/* ── LOADING OVERLAY ── */
+#loadingOverlay{position:fixed;inset:0;background:rgba(255,255,255,0.92);z-index:9998;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px}
+.spinner{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin 0.8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loadingText{font-size:13px;color:var(--text-2)}
+
+/* ── HEADER ── */
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;height:64px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.brand{display:flex;align-items:center;gap:12px}
+.brand-stamp{width:38px;height:38px;border:1.5px solid var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--gold);font-family:var(--serif);font-size:9px;font-weight:600;transform:rotate(-8deg);line-height:1.1;text-align:center}
+.brand-text{font-family:var(--serif);font-size:19px;font-weight:600;letter-spacing:-0.2px}
+.brand-sub{font-size:10px;color:var(--text-3);font-family:var(--mono);letter-spacing:0.5px;margin-top:-2px}
+.header-right{display:flex;align-items:center;gap:10px}
+.sync-badge{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--text-2);background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:6px 12px}
+.sync-dot{width:6px;height:6px;border-radius:50%;background:var(--credit)}
+.sync-dot.busy{background:var(--gold);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+.user-chip{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text-2)}
+.user-chip img{width:22px;height:22px;border-radius:50%}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;font-family:var(--sans);font-size:12.5px;font-weight:600;cursor:pointer;border:1px solid transparent;transition:all 0.15s;white-space:nowrap}
+.btn-gold{background:var(--gold);color:#fff;border-color:var(--gold)}
+.btn-gold:hover{opacity:0.88}
+.btn-ghost{background:transparent;color:var(--text-2);border-color:var(--border)}
+.btn-ghost:hover{background:var(--surface-2);color:var(--text)}
+.btn-sm{padding:6px 10px;font-size:11.5px}
+
+/* ── LAYOUT ── */
+.layout{display:flex;min-height:calc(100vh - 64px)}
+.sidebar{width:216px;background:var(--surface);border-right:1px solid var(--border);padding:20px 12px;display:flex;flex-direction:column;gap:2px;flex-shrink:0}
+.nav-label{font-size:10px;font-weight:600;color:var(--text-3);letter-spacing:0.8px;text-transform:uppercase;padding:10px 12px 6px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:7px;cursor:pointer;color:var(--text-2);font-size:13px;border:none;background:transparent;width:100%;text-align:left;transition:all 0.12s;font-family:var(--sans)}
+.nav-item:hover{background:var(--surface-2);color:var(--text)}
+.nav-item.active{background:var(--gold-dim);color:var(--gold);font-weight:600}
+.nav-dot{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:0.6;flex-shrink:0}
+.main{flex:1;padding:28px 32px;overflow-y:auto;max-width:1180px}
+.page-header{margin-bottom:22px}
+.page-title{font-family:var(--serif);font-size:26px;font-weight:600;letter-spacing:-0.3px}
+.page-sub{font-size:13px;color:var(--text-2);margin-top:4px}
+.section{display:none}
+.section.active{display:block;animation:fadein 0.25s ease}
+@keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── CARDS ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px 22px;margin-bottom:16px}
+.card-title{font-size:11.5px;font-weight:600;color:var(--text-2);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between}
+.card-hint{font-size:11px;color:var(--text-3);margin-bottom:14px}
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;position:relative;overflow:hidden}
+.kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--gold);opacity:0.7}
+.kpi-label{font-size:10.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px}
+.kpi-value{font-family:var(--mono);font-size:21px;font-weight:700}
+.kpi-value.credit{color:var(--credit)}
+.kpi-value.debit{color:var(--debit)}
+.kpi-value.gold{color:var(--gold)}
+.kpi-note{font-size:10.5px;color:var(--text-3);margin-top:5px}
+.chart-wrap{position:relative;height:280px;cursor:pointer}
+.chart-wrap.tall{height:340px}
+.click-hint{font-size:10.5px;color:var(--text-3);text-align:right;margin-top:-8px;margin-bottom:8px}
+
+/* ── TABLE ── */
+.ldg-table{width:100%;border-collapse:collapse}
+.ldg-table th{text-align:left;padding:8px 10px;font-size:9.5px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);white-space:nowrap}
+.ldg-table td{padding:10px 10px;font-size:13px;border-bottom:1px solid var(--border-soft)}
+.ldg-table tbody tr:last-child td{border-bottom:none}
+.ldg-table tbody tr:hover{background:var(--surface-2);cursor:pointer}
+.num{font-family:var(--mono);text-align:right}
+.num.credit{color:var(--credit)}
+.num.debit{color:var(--debit)}
+
+/* ── FORMS ── */
+.form-row{display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.form-group{flex:1;min-width:160px}
+.form-label{display:block;font-size:10.5px;font-weight:600;color:var(--text-2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px}
+select,input[type=text]{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:var(--sans);font-size:13px;padding:9px 12px;outline:none;transition:border 0.15s}
+select:focus,input[type=text]:focus{border-color:var(--gold)}
+.ledger-search-box{max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--surface-2)}
+.ledger-opt{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:12.5px;border-bottom:1px solid var(--border-soft);cursor:pointer}
+.ledger-opt:last-child{border-bottom:none}
+.ledger-opt:hover{background:var(--surface-3)}
+.ledger-opt input{margin:0}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--gold-dim);color:var(--gold);border:1px solid rgba(156,122,46,0.25);border-radius:20px;padding:4px 10px;font-size:11.5px;font-weight:600;margin:3px 4px 0 0}
+.chip button{background:none;border:none;color:inherit;cursor:pointer;font-size:13px;line-height:1;padding:0}
+
+.empty-state{text-align:center;padding:48px 24px;color:var(--text-2)}
+.empty-state .glyph{font-family:var(--serif);font-size:34px;color:var(--text-3);margin-bottom:10px}
+.empty-state p{font-size:14px;margin-bottom:4px}
+.empty-state small{font-size:12px;color:var(--text-3)}
+.report-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px 8px;margin-bottom:14px}
+.report-card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.report-card-title{font-family:var(--serif);font-size:15px;font-weight:600}
+.report-card-meta{font-size:10.5px;color:var(--text-3);margin-top:2px}
+.divider{height:1px;background:var(--border);margin:18px 0}
+
+/* ── MODAL (drill-down) ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(28,26,23,0.4);z-index:1000;align-items:flex-start;justify-content:center;padding:60px 20px;overflow-y:auto}
+.modal-overlay.open{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);width:100%;max-width:640px;padding:24px;margin:auto;box-shadow:0 24px 60px rgba(28,26,23,0.18)}
+.modal-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+.modal-title{font-family:var(--serif);font-size:18px;font-weight:600}
+.modal-sub{font-size:12px;color:var(--text-2);margin-top:3px}
+.modal-total{display:flex;justify-content:space-between;align-items:center;padding:14px 0;margin-top:8px;border-top:1px solid var(--border);font-family:var(--mono);font-size:15px;font-weight:600}
+
+#toast{position:fixed;bottom:24px;right:24px;background:var(--text);color:#fff;border:1px solid var(--border);padding:10px 18px;border-radius:8px;font-size:13px;font-weight:500;opacity:0;transition:opacity 0.25s;pointer-events:none;z-index:9999;box-shadow:0 8px 24px rgba(0,0,0,0.15)}
+.mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);z-index:200;padding:6px 0 max(6px,env(safe-area-inset-bottom))}
+.mobile-nav-inner{display:flex;justify-content:space-around;overflow-x:auto;scrollbar-width:none}
+.mobile-nav-inner::-webkit-scrollbar{display:none}
+.mobile-nav-item{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 4px;border:none;background:none;color:var(--text-3);font-family:var(--sans);font-size:9px;cursor:pointer;flex:1;min-width:0}
+.mobile-nav-item.active{color:var(--gold)}
+.mobile-glyph{font-family:var(--serif);font-size:15px;font-weight:600}
+
+@media (max-width:860px){
+  .sidebar{display:none}
+  .mobile-nav{display:block}
+  .main{padding:18px 16px 92px;max-width:100%}
+  .kpi-grid{grid-template-columns:repeat(2,1fr)}
+  .header{padding:0 16px}
+  .brand-sub{display:none}
+  .form-row{flex-direction:column}
+}
+</style>
+</head>
+<body>
+
+<!-- SIGN-IN SCREEN -->
+<div id="signinScreen">
+  <div class="signin-card">
+    <div class="signin-stamp">FY<br>25–26</div>
+    <div class="signin-title">Ledger</div>
+    <div class="signin-sub">Ekisha Financials — sign in to continue</div>
+    <div id="gsiButton"></div>
+    <div class="signin-error" id="signinError"></div>
+    <div class="signin-note">Access is restricted to one Google account. Every request is verified server-side — nothing is cached or shown until sign-in succeeds.</div>
+  </div>
+</div>
+
+<!-- LOADING OVERLAY -->
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <div id="loadingText">Loading…</div>
+</div>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="brand">
+    <div class="brand-stamp">FY<br>25–26</div>
+    <div><div class="brand-text">Ledger</div><div class="brand-sub">EKISHA FINANCIALS</div></div>
+  </div>
+  <div class="header-right">
+    <div class="user-chip" id="userChip"></div>
+    <div class="sync-badge"><span class="sync-dot" id="syncDot"></span><span id="syncTxt">Not loaded</span></div>
+    <button class="btn btn-gold" onclick="pullFromDrive()">⟳ Pull latest backup</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <span class="nav-label">Dashboard</span>
+    <button class="nav-item active" onclick="switchTab('overview')"><span class="nav-dot"></span>Overview</button>
+    <button class="nav-item" onclick="switchTab('revenue')"><span class="nav-dot"></span>Revenue by Channel</button>
+    <button class="nav-item" onclick="switchTab('ads')"><span class="nav-dot"></span>Ad Spend</button>
+    <button class="nav-item" onclick="switchTab('gst')"><span class="nav-dot"></span>GST</button>
+    <button class="nav-item" onclick="switchTab('expenses')"><span class="nav-dot"></span>Expenses</button>
+    <button class="nav-item" onclick="switchTab('vendors')"><span class="nav-dot"></span>Vendor Payables</button>
+    <button class="nav-item" onclick="switchTab('bank')"><span class="nav-dot"></span>Bank Cash Flow</button>
+    <span class="nav-label">Build your own</span>
+    <button class="nav-item" onclick="switchTab('reports')"><span class="nav-dot"></span>Report Builder</button>
+    <span class="nav-label">System</span>
+    <button class="nav-item" onclick="switchTab('settings')"><span class="nav-dot"></span>Settings &amp; Sync</button>
+  </aside>
+
+  <main class="main">
+    <div id="tab-overview" class="section active">
+      <div class="page-header"><div class="page-title">Overview</div><div class="page-sub" id="overviewPeriod">—</div></div>
+      <div class="kpi-grid" id="kpiGrid"></div>
+      <div class="card"><div class="card-title">Revenue by channel — monthly</div><div class="card-hint">Click any bar to see the transactions behind it</div><div class="chart-wrap tall" id="wrapOverviewRevenue"><canvas id="chartOverviewRevenue"></canvas></div></div>
+      <div class="card"><div class="card-title">Bank cumulative position (HDFC)</div><div class="chart-wrap" id="wrapOverviewBank"><canvas id="chartOverviewBank"></canvas></div></div>
+    </div>
+
+    <div id="tab-revenue" class="section">
+      <div class="page-header"><div class="page-title">Revenue by Channel</div><div class="page-sub">Website · Myntra · Amazon · Flipkart · Meesho · Ajio</div></div>
+      <div class="card"><div class="card-title">Monthly revenue by channel</div><div class="card-hint">Click a point to drill into that month</div><div class="chart-wrap tall" id="wrapRevMonthly"><canvas id="chartRevMonthly"></canvas></div></div>
+      <div class="card"><div class="card-title">Channel totals (FY 2025–26)</div><div class="chart-wrap" id="wrapRevTotals"><canvas id="chartRevTotals"></canvas></div></div>
+      <div class="card"><div class="card-title">Channel breakdown table</div><div class="card-hint">Click a row to see every transaction</div><div id="revTable"></div></div>
+    </div>
+
+    <div id="tab-ads" class="section">
+      <div class="page-header"><div class="page-title">Ad Spend</div><div class="page-sub">Meta/Facebook · Target Ads · Dev Ads · General Ad Exp, vs total revenue</div></div>
+      <div class="kpi-grid" id="adsKpi" style="grid-template-columns:repeat(3,1fr)"></div>
+      <div class="card"><div class="card-title">Monthly ad spend vs revenue</div><div class="chart-wrap tall" id="wrapAdsVsRev"><canvas id="chartAdsVsRev"></canvas></div></div>
+      <div class="card"><div class="card-title">Ad spend by platform</div><div class="chart-wrap" id="wrapAdsSplit"><canvas id="chartAdsSplit"></canvas></div></div>
+    </div>
+
+    <div id="tab-gst" class="section">
+      <div class="page-header"><div class="page-title">GST</div><div class="page-sub">Monthly net movement — CGST / SGST / IGST</div></div>
+      <div class="card"><div class="card-title">Net GST movement by month</div><div class="chart-wrap tall" id="wrapGst"><canvas id="chartGst"></canvas></div></div>
+      <div class="card"><div class="card-title">FY total by head</div><div id="gstTable"></div></div>
+    </div>
+
+    <div id="tab-expenses" class="section">
+      <div class="page-header"><div class="page-title">Expenses</div><div class="page-sub">Top expense categories, FY 2025–26</div></div>
+      <div class="card"><div class="card-title">Top expense categories</div><div class="card-hint">Click a bar to see every entry</div><div class="chart-wrap tall" id="wrapExpTop"><canvas id="chartExpTop"></canvas></div></div>
+      <div class="card"><div class="card-title">Monthly trend — top 4 categories</div><div class="chart-wrap" id="wrapExpTrend"><canvas id="chartExpTrend"></canvas></div></div>
+    </div>
+
+    <div id="tab-vendors" class="section">
+      <div class="page-header"><div class="page-title">Vendor Payables</div><div class="page-sub">Outstanding balance owed (credit − debit)</div></div>
+      <div class="card"><div class="card-title">Outstanding by vendor</div><div class="card-hint">Click a bar to see the ledger</div><div class="chart-wrap tall" id="wrapVendors"><canvas id="chartVendors"></canvas></div></div>
+      <div class="card"><div class="card-title">Vendor table</div><div id="vendorTable"></div></div>
+    </div>
+
+    <div id="tab-bank" class="section">
+      <div class="page-header"><div class="page-title">Bank Cash Flow</div><div class="page-sub">HDFC Bank — monthly net movement and cumulative position</div></div>
+      <div class="card"><div class="card-title">Monthly net (in − out)</div><div class="chart-wrap" id="wrapBankNet"><canvas id="chartBankNet"></canvas></div></div>
+      <div class="card"><div class="card-title">Cumulative position</div><div class="chart-wrap" id="wrapBankCum"><canvas id="chartBankCum"></canvas></div></div>
+    </div>
+
+    <div id="tab-reports" class="section">
+      <div class="page-header"><div class="page-title">Report Builder</div><div class="page-sub">Pick any ledgers, any metric, any chart — build the comparison you actually want</div></div>
+      <div class="card">
+        <div class="card-title">New report</div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Report name</label><input type="text" id="rb-name" placeholder="e.g. Tunics vs Meta ad spend"></div>
+          <div class="form-group"><label class="form-label">Chart type</label><select id="rb-type"><option value="line">Line</option><option value="bar">Bar</option></select></div>
+          <div class="form-group"><label class="form-label">Metric</label><select id="rb-metric"><option value="net">Net (credit − debit)</option><option value="cr">Credit only</option><option value="dr">Debit only</option><option value="count">Transaction count</option></select></div>
+        </div>
+        <div class="form-group" style="margin-bottom:10px">
+          <label class="form-label">Search ledgers to add as series (378 available)</label>
+          <input type="text" id="rb-search" placeholder="Type to filter… e.g. myntra, gst, facebook" oninput="renderLedgerSearch()">
+        </div>
+        <div class="ledger-search-box" id="rb-ledger-list"></div>
+        <div id="rb-selected-chips" style="margin-top:10px"></div>
+        <button class="btn btn-gold" style="margin-top:14px" onclick="saveReport()">＋ Save report</button>
+      </div>
+      <div id="savedReports"></div>
+    </div>
+
+    <div id="tab-settings" class="section">
+      <div class="page-header"><div class="page-title">Settings &amp; Sync</div><div class="page-sub">Data source and security status</div></div>
+      <div class="card">
+        <div class="card-title">Data source</div>
+        <p style="font-size:13px;color:var(--text-2);line-height:1.7">Live from <code style="font-family:var(--mono);background:var(--surface-2);padding:2px 6px;border-radius:4px" id="sourceFile">—</code>, last parsed <span id="sourceGenerated">—</span>. "Pull latest backup" re-runs the Drive → parse → store pipeline on the backend, then reloads this page's data.</p>
+      </div>
+      <div class="card">
+        <div class="card-title">Security status</div>
+        <div style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:var(--credit-dim);border:1px solid rgba(31,122,77,0.25);border-radius:8px;font-size:12.5px;color:var(--text-2);line-height:1.6">
+          <span style="color:var(--credit);font-weight:700">✓</span>
+          <span>Signed in with Google, restricted to one account. Every request to the backend carries a fresh, server-verified identity token — nothing is cached client-side beyond this session.</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Session</div>
+        <button class="btn btn-ghost" onclick="location.reload()">↺ Sign out / reload</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- DRILL-DOWN MODAL -->
+<div class="modal-overlay" id="drillModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div><div class="modal-title" id="drillTitle">Transactions</div><div class="modal-sub" id="drillSub"></div></div>
+      <button class="btn btn-ghost btn-sm" onclick="closeDrill()">✕</button>
+    </div>
+    <div id="drillBody"></div>
+    <div class="modal-total" id="drillTotal"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<nav class="mobile-nav">
+  <div class="mobile-nav-inner">
+    <button class="mobile-nav-item active" onclick="switchTab('overview');setMob(this)"><span class="mobile-glyph">Ov</span>Overview</button>
+    <button class="mobile-nav-item" onclick="switchTab('revenue');setMob(this)"><span class="mobile-glyph">Rv</span>Revenue</button>
+    <button class="mobile-nav-item" onclick="switchTab('ads');setMob(this)"><span class="mobile-glyph">Ad</span>Ads</button>
+    <button class="mobile-nav-item" onclick="switchTab('gst');setMob(this)"><span class="mobile-glyph">Gs</span>GST</button>
+    <button class="mobile-nav-item" onclick="switchTab('expenses');setMob(this)"><span class="mobile-glyph">Ex</span>Expenses</button>
+    <button class="mobile-nav-item" onclick="switchTab('vendors');setMob(this)"><span class="mobile-glyph">Vn</span>Vendors</button>
+    <button class="mobile-nav-item" onclick="switchTab('bank');setMob(this)"><span class="mobile-glyph">Bk</span>Bank</button>
+    <button class="mobile-nav-item" onclick="switchTab('reports');setMob(this)"><span class="mobile-glyph">Rp</span>Reports</button>
+    <button class="mobile-nav-item" onclick="switchTab('settings');setMob(this)"><span class="mobile-glyph">St</span>Settings</button>
+  </div>
+</nav>
+
+<script>
+/* ============ CONFIG ============ */
+const GOOGLE_CLIENT_ID = "914256283099-d7alg61t6epkb7c7kae91d905p17rkds.apps.googleusercontent.com";
+const SERVICE_URL = "https://ekisha-ledger-api-914256283099.asia-south1.run.app";
+
+let ID_TOKEN = null;
+let DATA = null;            // {meta, ledgers[], transactions[]}
+let LEDGER_MAP = {};         // code -> {name, atype}
+const charts = {};
+const fmt = n => Math.round(n).toLocaleString('en-IN');
+const fmtSigned = n => (n<0?'-':'')+'₹'+Math.abs(Math.round(n)).toLocaleString('en-IN');
+const monthLabel = mk => new Date(mk+'-01').toLocaleDateString('en-IN',{month:'short',year:'2-digit'});
+const GOLD='#9c7a2e', CREDIT='#1f7a4d', DEBIT='#a83f28', TEXT2='#696255';
+const PALETTE=['#9c7a2e','#1f7a4d','#3c6e91','#a83f28','#7a5a9c','#3c9a94','#a86b2e','#5c6b78'];
+
+Chart.defaults.font.family="'Inter',sans-serif";
+Chart.defaults.color = TEXT2;
+Chart.defaults.borderColor = 'rgba(28,26,23,0.06)';
+
+/* ============ AUTH (Google Sign-In) ============ */
+function onSignIn(response){
+  ID_TOKEN = response.credential;
+  try{
+    const payload = JSON.parse(atob(response.credential.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+    document.getElementById('userChip').innerHTML = `<img src="${payload.picture}"><span>${payload.name}</span>`;
+  }catch(e){}
+  document.getElementById('signinScreen').style.display = 'none';
+  loadData(false);
+}
+
+window.addEventListener('load', () => {
+  const tryInit = () => {
+    if(window.google && google.accounts){
+      google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: onSignIn });
+      google.accounts.id.renderButton(document.getElementById('gsiButton'), { theme: 'outline', size: 'large', shape: 'pill', text: 'signin_with' });
+    } else {
+      setTimeout(tryInit, 200);
+    }
+  };
+  tryInit();
+});
+
+/* ============ API CALLS ============ */
+function authHeaders(){
+  return { 'Authorization': 'Bearer ' + ID_TOKEN, 'X-Id-Token': ID_TOKEN };
+}
+function showLoading(msg){
+  document.getElementById('loadingText').textContent = msg;
+  document.getElementById('loadingOverlay').style.display = 'flex';
+}
+function hideLoading(){ document.getElementById('loadingOverlay').style.display = 'none'; }
+
+async function apiCall(path, method='GET'){
+  const res = await fetch(SERVICE_URL + path, { method, headers: authHeaders() });
+  const contentType = res.headers.get('content-type') || '';
+  if(!contentType.includes('application/json')){
+    throw new Error('Backend returned a non-JSON response (HTTP ' + res.status + '). This usually means Cloud Run\'s own access gate rejected the request before it reached the app — check that your Google account has the Cloud Run Invoker role on this service.');
+  }
+  const data = await res.json();
+  if(!res.ok){
+    throw new Error((data && (data.error + (data.detail ? ': '+data.detail : ''))) || ('HTTP ' + res.status));
+  }
+  return data;
+}
+
+async function loadData(forceSync){
+  const dot = document.getElementById('syncDot'), txt = document.getElementById('syncTxt');
+  try{
+    if(forceSync){
+      showLoading('Pulling latest backup from Drive…');
+      dot.classList.add('busy'); txt.textContent = 'Syncing…';
+      await apiCall('/sync', 'POST');
+    }
+    showLoading('Loading ledger data…');
+    const cube = await apiCall('/data', 'GET');
+    DATA = cube;
+    LEDGER_MAP = {};
+    (DATA.ledgers||[]).forEach(l => LEDGER_MAP[l.code] = l);
+    dot.classList.remove('busy');
+    txt.textContent = DATA.meta.transaction_count + ' transactions · synced';
+    document.getElementById('sourceFile').textContent = DATA.meta.source_file || '—';
+    document.getElementById('sourceGenerated').textContent = DATA.meta.generated_at ? new Date(DATA.meta.generated_at).toLocaleString('en-IN') : '—';
+    renderAll();
+    renderLedgerSearch();
+    renderSavedReports();
+    toast(forceSync ? 'Synced and reloaded' : 'Loaded');
+  }catch(err){
+    dot.classList.remove('busy'); txt.textContent = 'Error';
+    toast(err.message, true);
+    console.error(err);
+  }finally{
+    hideLoading();
+  }
+}
+async function pullFromDrive(){ await loadData(true); }
+
+/* ============ UI HELPERS ============ */
+function switchTab(id){
+  const ids=['overview','revenue','ads','gst','expenses','vendors','bank','reports','settings'];
+  document.querySelectorAll('.sidebar .nav-item').forEach((n,i)=>n.classList.toggle('active',ids[i]===id));
+  document.querySelectorAll('.mobile-nav-item').forEach((n,i)=>n.classList.toggle('active',ids[i]===id));
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+}
+function setMob(el){document.querySelectorAll('.mobile-nav-item').forEach(b=>b.classList.remove('active'));el.classList.add('active');}
+function toast(msg, isError){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.style.background = isError ? DEBIT : '#1c1a17'; t.style.opacity=1;
+  setTimeout(()=>t.style.opacity=0, isError ? 4200 : 2600);
+}
+
+/* ============ DATA UTILITIES ============ */
+function monthsInData(){ return DATA.months || (DATA._months ||= [...new Set(DATA.transactions.map(t=>t.date.slice(0,7)))].sort()); }
+function txByCodesAndMonth(codes, month){
+  const set = new Set(codes);
+  return DATA.transactions.filter(t => set.has(t.code) && (!month || t.date.startsWith(month)));
+}
+function sumSeries(codes, months, metric){
+  const set = new Set(codes);
+  const out = {}; months.forEach(m=>out[m]=0);
+  DATA.transactions.forEach(t=>{
+    if(!set.has(t.code)) return;
+    const m = t.date.slice(0,7);
+    if(!(m in out)) return;
+    if(metric==='cr') out[m]+=t.cr;
+    else if(metric==='dr') out[m]+=t.dr;
+    else if(metric==='count') out[m]+=1;
+    else out[m]+= (t.cr - t.dr);
+  });
+  return out;
+}
+function totalFor(codes, metric){
+  const set = new Set(codes); let s=0;
+  DATA.transactions.forEach(t=>{
+    if(!set.has(t.code)) return;
+    if(metric==='cr') s+=t.cr; else if(metric==='dr') s+=t.dr; else if(metric==='count') s+=1; else s+=(t.cr-t.dr);
+  });
+  return s;
+}
+function codesByNameContains(sub){
+  sub = sub.toUpperCase();
+  return Object.keys(LEDGER_MAP).filter(c => (LEDGER_MAP[c].name||'').toUpperCase().includes(sub));
+}
+function codesByAtype(atype){
+  return Object.keys(LEDGER_MAP).filter(c => LEDGER_MAP[c].atype === atype);
+}
+
+/* Known category definitions, resolved dynamically against this FY's ledger names */
+function getChannelDefs(){
+  return {
+    'Website': codesByNameContains('WEBSITE RECEIPTS'),
+    'Myntra': codesByNameContains('MYNTRA RECEIPTS'),
+    'Amazon': codesByNameContains('AMAZON RECEIPTS'),
+    'Flipkart': codesByNameContains('FLIPKART RECEIPTS'),
+    'Meesho': codesByNameContains('MEESHO RECEIPTS'),
+    'Ajio': codesByNameContains('AJIO'),
+  };
+}
+function getAdDefs(){
+  return {
+    'Meta/Facebook': codesByNameContains('FACEBOOK INDIA'),
+    'Target Ads': codesByNameContains('TARGET ADVERTISEMENT'),
+    'Dev Ads': codesByNameContains('DEV ADS'),
+    'General Ad Exp': codesByNameContains('ADVERTISEMENT EXP'),
+  };
+}
+function getGstDefs(){
+  return {
+    'CGST': codesByNameContains('CGST A/C'),
+    'SGST': codesByNameContains('SGST A/C'),
+    'IGST': codesByNameContains('IGST A/C'),
+  };
+}
+
+/* ============ DRILL-DOWN MODAL ============ */
+function openDrill(title, sub, codes, month){
+  const txs = txByCodesAndMonth(codes, month).sort((a,b)=>b.date.localeCompare(a.date));
+  document.getElementById('drillTitle').textContent = title;
+  document.getElementById('drillSub').textContent = sub + ` · ${txs.length} transaction${txs.length!==1?'s':''}`;
+  let total = 0;
+  const rows = txs.slice(0, 300).map(t=>{
+    const net = t.cr - t.dr;
+    total += net;
+    return `<tr><td style="font-family:var(--mono);font-size:11.5px;color:var(--text-2)">${t.date}</td><td style="font-size:12px">${LEDGER_MAP[t.code]?.name || t.code}</td><td style="font-size:11px;color:var(--text-3)">${t.type||''}</td><td class="num credit">${t.cr?fmt(t.cr):''}</td><td class="num debit">${t.dr?fmt(t.dr):''}</td></tr>`;
+  }).join('');
+  document.getElementById('drillBody').innerHTML = txs.length
+    ? `<div style="max-height:360px;overflow-y:auto"><table class="ldg-table"><thead><tr><th>Date</th><th>Ledger</th><th>Type</th><th class="num">Credit</th><th class="num">Debit</th></tr></thead><tbody>${rows}</tbody></table></div>`
+    : `<div class="empty-state"><div class="glyph">§</div><p>No transactions in this slice</p></div>`;
+  document.getElementById('drillTotal').innerHTML = txs.length
+    ? `<span>Net total</span><span class="${total>=0?'credit':'debit'}" style="color:${total>=0?'var(--credit)':'var(--debit)'}">${fmtSigned(total)}</span>` : '';
+  document.getElementById('drillModal').classList.add('open');
+}
+function closeDrill(){ document.getElementById('drillModal').classList.remove('open'); }
+document.getElementById('drillModal').addEventListener('click', e=>{ if(e.target===e.currentTarget) closeDrill(); });
+
+/* ============ CHART BUILDERS (all click-enabled) ============ */
+function destroyChart(id){ if(charts[id]){ charts[id].destroy(); delete charts[id]; } }
+
+function onBarClick(evt, elements, chart, seriesCodesLookup, months){
+  if(!elements.length) return;
+  const el = elements[0];
+  const datasetLabel = chart.data.datasets[el.datasetIndex].label;
+  const month = months[el.index];
+  const codes = seriesCodesLookup[datasetLabel] || [];
+  openDrill(datasetLabel, monthLabel(month), codes, month);
+}
+
+function makeClickableBar(ctx, labels, datasets, months, seriesCodesLookup, opts={}){
+  return new Chart(ctx,{type:'bar',data:{labels,datasets},options:Object.assign({
+    responsive:true,maintainAspectRatio:false,
+    onClick:(evt,elements,chart)=>onBarClick(evt,elements,chart,seriesCodesLookup,months),
+    plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:14,font:{size:11}}},
+      tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmtSigned(c.raw)} · click to drill in`}}},
+    scales:{y:{ticks:{callback:v=>'₹'+fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}
+  },opts)});
+}
+function makeClickableLine(ctx, labels, datasets, months, seriesCodesLookup, opts={}){
+  return new Chart(ctx,{type:'line',data:{labels,datasets},options:Object.assign({
+    responsive:true,maintainAspectRatio:false,
+    interaction:{mode:'index',intersect:false},
+    onClick:(evt,elements,chart)=>{
+      const points = chart.getElementsAtEventForMode(evt,'nearest',{intersect:true},true);
+      if(points.length) onBarClick(evt,points,chart,seriesCodesLookup,months);
+    },
+    plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:14,font:{size:11}}},
+      tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmtSigned(c.raw)}`}}},
+    scales:{y:{ticks:{callback:v=>'₹'+fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}
+  },opts)});
+}
+function makeHBar(ctx, labels, data, color, codesPerBar){
+  return new Chart(ctx,{type:'bar',data:{labels,datasets:[{data,backgroundColor:color,borderRadius:4}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      onClick:(evt,elements,chart)=>{ if(elements.length){ const i=elements[0].index; openDrill(labels[i], 'Full FY', codesPerBar[i], null); } },
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmtSigned(c.raw)} · click to drill in`}}},
+      scales:{x:{ticks:{callback:v=>'₹'+fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},y:{grid:{display:false}}}}});
+}
+function makeDoughnut(ctx, labels, data, codesPerSlice){
+  return new Chart(ctx,{type:'doughnut',data:{labels,datasets:[{data,backgroundColor:PALETTE,borderColor:'#ffffff',borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      onClick:(evt,elements,chart)=>{ if(elements.length){ const i=elements[0].index; openDrill(labels[i], 'Full FY', codesPerSlice[i], null); } },
+      plugins:{legend:{position:'right',labels:{boxWidth:10,padding:12,font:{size:11}}},
+        tooltip:{callbacks:{label:c=>` ${c.label}: ${fmtSigned(c.raw)} · click to drill in`}}}}});
+}
+
+/* ============ RENDER ALL PRESET VIEWS ============ */
+function renderAll(){
+  const months = monthsInData();
+  const mLabels = months.map(monthLabel);
+  const channels = getChannelDefs();
+  const ads = getAdDefs();
+  const gst = getGstDefs();
+  const allRevCodes = Object.values(channels).flat();
+  const bankCodes = codesByNameContains('HDFC BANK');
+  const expenseCodes = codesByAtype('4');
+  const vendorCodes = codesByAtype('113');
+
+  const totalRevenue = totalFor(allRevCodes,'cr');
+  const totalAds = Object.values(ads).flat().length ? totalFor(Object.values(ads).flat(),'dr') : 0;
+  const bankSeries = sumSeries(bankCodes, months, 'net');
+  let running=0; const bankCum={};
+  months.forEach(m=>{ running += bankSeries[m]; bankCum[m]=running; });
+  const netBank = running;
+
+  const expByLedger = {};
+  DATA.transactions.forEach(t=>{ if(new Set(expenseCodes).has(t.code)){ expByLedger[t.code]=(expByLedger[t.code]||0)+(t.dr-t.cr); } });
+  const topExpNames = Object.entries(expByLedger).sort((a,b)=>b[1]-a[1]).filter(([,v])=>v>0).slice(0,8).map(([c])=>c);
+
+  const vendorBal = {};
+  DATA.transactions.forEach(t=>{ if(new Set(vendorCodes).has(t.code)){ vendorBal[t.code]=(vendorBal[t.code]||0)+(t.cr-t.dr); } });
+  const topVendors = Object.entries(vendorBal).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1])).filter(([,v])=>Math.abs(v)>1).slice(0,10);
+
+  document.getElementById('overviewPeriod').textContent = `${monthLabel(months[0])} – ${monthLabel(months[months.length-1])}`;
+  document.getElementById('kpiGrid').innerHTML = `
+    <div class="kpi-card"><div class="kpi-label">Total Revenue</div><div class="kpi-value credit">${fmtSigned(totalRevenue)}</div><div class="kpi-note">All channels, FY25-26</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Ad Spend</div><div class="kpi-value debit">${fmtSigned(totalAds)}</div><div class="kpi-note">${totalRevenue?(totalAds/totalRevenue*100).toFixed(1):'0'}% of revenue</div></div>
+    <div class="kpi-card"><div class="kpi-label">Net Bank Position</div><div class="kpi-value ${netBank>=0?'credit':'debit'}">${fmtSigned(netBank)}</div><div class="kpi-note">HDFC, cumulative</div></div>
+    <div class="kpi-card"><div class="kpi-label">Vendor Payables</div><div class="kpi-value gold">${fmtSigned(topVendors.reduce((s,[,v])=>s+v,0))}</div><div class="kpi-note">Outstanding, top 10</div></div>`;
+
+  destroyChart('ov1');
+  const chLookup1 = {}; Object.keys(channels).forEach(ch=>chLookup1[ch]=channels[ch]);
+  charts.ov1 = makeClickableBar(document.getElementById('chartOverviewRevenue'), mLabels,
+    Object.keys(channels).map((ch,i)=>({label:ch,data:months.map(m=>sumSeries(channels[ch],[m],'cr')[m]||0),backgroundColor:PALETTE[i%PALETTE.length],borderRadius:3})),
+    months, chLookup1, {scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,ticks:{callback:v=>'₹'+fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}}}});
+
+  destroyChart('ov2');
+  charts.ov2 = makeClickableLine(document.getElementById('chartOverviewBank'), mLabels,
+    [{label:'Bank',data:months.map(m=>bankCum[m]||0),borderColor:GOLD,backgroundColor:'rgba(156,122,46,0.10)',fill:true,tension:0.3}],
+    months, {'Bank':bankCodes});
+
+  destroyChart('rev1');
+  charts.rev1 = makeClickableLine(document.getElementById('chartRevMonthly'), mLabels,
+    Object.keys(channels).map((ch,i)=>({label:ch,data:months.map(m=>sumSeries(channels[ch],[m],'cr')[m]||0),borderColor:PALETTE[i%PALETTE.length],backgroundColor:'transparent',tension:0.3})),
+    months, chLookup1);
+
+  const chNames = Object.keys(channels);
+  const chTotals = chNames.map(ch=>totalFor(channels[ch],'cr'));
+  destroyChart('rev2');
+  charts.rev2 = makeDoughnut(document.getElementById('chartRevTotals'), chNames, chTotals, chNames.map(ch=>channels[ch]));
+  document.getElementById('revTable').innerHTML = `<table class="ldg-table"><thead><tr><th>Channel</th><th class="num">Total Revenue</th><th class="num">% of Total</th></tr></thead><tbody>
+    ${chNames.map((ch,i)=>`<tr onclick='openDrill("${ch}","Full FY",${JSON.stringify(channels[ch])},null)'><td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${PALETTE[i%PALETTE.length]};margin-right:8px"></span>${ch}</td><td class="num credit">${fmtSigned(chTotals[i])}</td><td class="num">${totalRevenue?(chTotals[i]/totalRevenue*100).toFixed(1):'0'}%</td></tr>`).join('')}
+  </tbody></table>`;
+
+  const adNames = Object.keys(ads).filter(a=>ads[a].length);
+  const adTotals = adNames.map(a=>totalFor(ads[a],'dr'));
+  document.getElementById('adsKpi').innerHTML = `
+    <div class="kpi-card"><div class="kpi-label">Total Ad Spend</div><div class="kpi-value debit">${fmtSigned(totalAds)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Of Revenue</div><div class="kpi-value gold">${totalRevenue?(totalAds/totalRevenue*100).toFixed(1):'0'}%</div></div>
+    <div class="kpi-card"><div class="kpi-label">Implied ROAS</div><div class="kpi-value credit">${totalAds?(totalRevenue/totalAds).toFixed(2):'—'}x</div></div>`;
+  destroyChart('ads1');
+  const adLookup = {}; adNames.forEach(a=>adLookup[a]=ads[a]); adLookup['Total Revenue']=allRevCodes;
+  charts.ads1 = new Chart(document.getElementById('chartAdsVsRev'),{
+    type:'bar',
+    data:{labels:mLabels,datasets:[
+      {type:'bar',label:'Ad Spend',data:months.map(m=>adNames.reduce((s,a)=>s+(sumSeries(ads[a],[m],'dr')[m]||0),0)),backgroundColor:DEBIT,borderRadius:3},
+      {type:'line',label:'Total Revenue',data:months.map(m=>sumSeries(allRevCodes,[m],'cr')[m]||0),borderColor:CREDIT,backgroundColor:'transparent',tension:0.3}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      onClick:(evt,elements,chart)=>{ if(elements.length){ const el=elements[0]; const label=chart.data.datasets[el.datasetIndex].label; const month=months[el.index];
+        const codes = label==='Ad Spend' ? adNames.flatMap(a=>ads[a]) : allRevCodes;
+        openDrill(label, monthLabel(month), codes, month); } },
+      plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:14,font:{size:11}}},tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmtSigned(c.raw)}`}}},
+      scales:{y:{ticks:{callback:v=>'₹'+fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
+  });
+  destroyChart('ads2');
+  charts.ads2 = makeDoughnut(document.getElementById('chartAdsSplit'), adNames, adTotals, adNames.map(a=>ads[a]));
+
+  const gstNames = Object.keys(gst).filter(g=>gst[g].length);
+  destroyChart('gst1');
+  const gstLookup={}; gstNames.forEach(g=>gstLookup[g]=gst[g]);
+  charts.gst1 = makeClickableBar(document.getElementById('chartGst'), mLabels,
+    gstNames.map((g,i)=>({label:g,data:months.map(m=>sumSeries(gst[g],[m],'net')[m]||0),backgroundColor:PALETTE[i%PALETTE.length],borderRadius:3})),
+    months, gstLookup);
+  const gstTotals = gstNames.map(g=>totalFor(gst[g],'net'));
+  document.getElementById('gstTable').innerHTML = `<table class="ldg-table"><thead><tr><th>Head</th><th class="num">Net Movement (FY)</th></tr></thead><tbody>
+    ${gstNames.map((g,i)=>`<tr onclick='openDrill("${g}","Full FY",${JSON.stringify(gst[g])},null)'><td>${g}</td><td class="num ${gstTotals[i]>=0?'debit':'credit'}">${fmtSigned(gstTotals[i])}</td></tr>`).join('')}
+  </tbody></table>`;
+
+  const expNames = topExpNames.map(c=>LEDGER_MAP[c]?.name || c);
+  const expVals = topExpNames.map(c=>expByLedger[c]);
+  destroyChart('exp1');
+  charts.exp1 = makeHBar(document.getElementById('chartExpTop'), expNames, expVals, DEBIT, topExpNames.map(c=>[c]));
+  const top4 = topExpNames.slice(0,4);
+  destroyChart('exp2');
+  const expLookup={}; top4.forEach(c=>expLookup[LEDGER_MAP[c]?.name||c]=[c]);
+  charts.exp2 = makeClickableLine(document.getElementById('chartExpTrend'), mLabels,
+    top4.map((c,i)=>({label:LEDGER_MAP[c]?.name||c,data:months.map(m=>sumSeries([c],[m],'net')[m]||0),borderColor:PALETTE[i%PALETTE.length],backgroundColor:'transparent',tension:0.3})),
+    months, expLookup);
+
+  const vNames = topVendors.map(([c])=>LEDGER_MAP[c]?.name || c);
+  const vVals = topVendors.map(([,v])=>v);
+  destroyChart('vnd1');
+  charts.vnd1 = makeHBar(document.getElementById('chartVendors'), vNames, vVals, GOLD, topVendors.map(([c])=>[c]));
+  document.getElementById('vendorTable').innerHTML = `<table class="ldg-table"><thead><tr><th>Vendor</th><th class="num">Outstanding</th></tr></thead><tbody>
+    ${topVendors.map(([c,v])=>`<tr onclick='openDrill("${LEDGER_MAP[c]?.name||c}","Full FY",${JSON.stringify([c])},null)'><td>${LEDGER_MAP[c]?.name||c}</td><td class="num" style="color:${v>=0?'var(--gold)':'var(--credit)'}">${fmtSigned(v)}</td></tr>`).join('')}
+  </tbody></table>`;
+
+  destroyChart('bnk1');
+  const bankLookup={'Net':bankCodes};
+  charts.bnk1 = makeClickableBar(document.getElementById('chartBankNet'), mLabels,
+    [{label:'Net',data:months.map(m=>bankSeries[m]||0),backgroundColor:months.map(m=>(bankSeries[m]||0)>=0?CREDIT:DEBIT),borderRadius:3}],
+    months, bankLookup);
+  destroyChart('bnk2');
+  charts.bnk2 = makeClickableLine(document.getElementById('chartBankCum'), mLabels,
+    [{label:'Cumulative',data:months.map(m=>bankCum[m]||0),borderColor:GOLD,backgroundColor:'rgba(156,122,46,0.10)',fill:true,tension:0.3}],
+    months, {'Cumulative':bankCodes});
+}
+
+/* ============ REPORT BUILDER ============ */
+let rbSelected = new Map(); // code -> name
+
+function renderLedgerSearch(){
+  if(!DATA) return;
+  const q = (document.getElementById('rb-search').value||'').trim().toUpperCase();
+  const box = document.getElementById('rb-ledger-list');
+  const matches = Object.keys(LEDGER_MAP).filter(c => !q || (LEDGER_MAP[c].name||'').toUpperCase().includes(q)).slice(0,60);
+  box.innerHTML = matches.map(c=>{
+    const checked = rbSelected.has(c) ? 'checked' : '';
+    return `<label class="ledger-opt"><input type="checkbox" ${checked} onchange="toggleLedger('${c}')"><span>${LEDGER_MAP[c].name || c}</span></label>`;
+  }).join('') || `<div style="padding:14px;font-size:12px;color:var(--text-3)">No ledgers match</div>`;
+  renderChips();
+}
+function toggleLedger(code){
+  if(rbSelected.has(code)) rbSelected.delete(code); else rbSelected.set(code, LEDGER_MAP[code]?.name || code);
+  renderLedgerSearch();
+}
+function renderChips(){
+  const wrap = document.getElementById('rb-selected-chips');
+  wrap.innerHTML = [...rbSelected.entries()].map(([code,name])=>
+    `<span class="chip">${name}<button onclick="toggleLedger('${code}');renderLedgerSearch()">✕</button></span>`).join('');
+}
+async function saveReport(){
+  const name = document.getElementById('rb-name').value.trim();
+  const type = document.getElementById('rb-type').value;
+  const metric = document.getElementById('rb-metric').value;
+  if(!name){ toast('Give the report a name', true); return; }
+  if(!rbSelected.size){ toast('Pick at least one ledger', true); return; }
+  const reports = await loadReports();
+  reports.push({ id: Date.now(), name, type, metric, series: [...rbSelected.entries()].map(([code,label])=>({code,label})) });
+  await saveReportsList(reports);
+  rbSelected = new Map();
+  document.getElementById('rb-name').value = '';
+  renderLedgerSearch();
+  toast('Report saved');
+  renderSavedReports();
+}
+async function deleteReport(id){
+  let reports = await loadReports();
+  reports = reports.filter(r=>r.id!==id);
+  await saveReportsList(reports);
+  renderSavedReports();
+}
+async function loadReports(){
+  try{ const r = await window.storage.get('reports', false); if(r && r.value) return JSON.parse(r.value); }catch(e){}
+  return [];
+}
+async function saveReportsList(list){ await window.storage.set('reports', JSON.stringify(list), false); }
+
+async function renderSavedReports(){
+  if(!DATA) return;
+  const reports = await loadReports();
+  const wrap = document.getElementById('savedReports');
+  if(!reports.length){
+    wrap.innerHTML = `<div class="empty-state"><div class="glyph">§</div><p>No saved reports yet</p><small>Search ledgers above, pick a metric and chart type, and save one</small></div>`;
+    return;
+  }
+  wrap.innerHTML = reports.map(r=>`
+    <div class="report-card">
+      <div class="report-card-head">
+        <div><div class="report-card-title">${r.name}</div><div class="report-card-meta">${r.series.length} series · ${r.metric} · ${r.type}</div></div>
+        <button class="btn btn-ghost btn-sm" onclick="deleteReport(${r.id})">✕ Remove</button>
+      </div>
+      <div class="chart-wrap" id="wrap-rpt-${r.id}"><canvas id="rpt-${r.id}"></canvas></div>
+    </div>`).join('');
+
+  const months = monthsInData(), mLabels = months.map(monthLabel);
+  reports.forEach((r,idx)=>{
+    const ctx = document.getElementById('rpt-'+r.id);
+    const lookup = {}; r.series.forEach(s=>lookup[s.label]=[s.code]);
+    const datasets = r.series.map((s,i)=>{
+      const series = sumSeries([s.code], months, r.metric);
+      const data = months.map(m=>series[m]||0);
+      return r.type==='bar'
+        ? {label:s.label,data,backgroundColor:PALETTE[i%PALETTE.length],borderRadius:3}
+        : {label:s.label,data,borderColor:PALETTE[i%PALETTE.length],backgroundColor:'transparent',tension:0.3};
+    });
+    destroyChart('rpt'+r.id);
+    charts['rpt'+r.id] = r.type==='bar'
+      ? makeClickableBar(ctx, mLabels, datasets, months, lookup)
+      : makeClickableLine(ctx, mLabels, datasets, months, lookup);
+  });
+}
+</script>
+</body>
+</html>
