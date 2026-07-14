@@ -622,6 +622,69 @@ function getChannelDefs(){
     'Ajio': codesByNameContains('AJIO'),
   };
 }
+/* Some companies (e.g. a newly-added entity) don't yet post to the umbrella
+   "X RECEIPTS" ledgers at all — they record sales directly on the per-state
+   ledgers (MYN-<state>, AMA-<state>, etc). Where a company genuinely has
+   both, the two are near-duplicates of the same money (confirmed against
+   real data), so combining them would double-count. This resolves, per
+   company, whichever the company actually uses: RECEIPTS first, state-wise
+   ledgers only as a fallback when that company has no RECEIPTS activity. */
+const STATE_PREFIX = {'Website':'WEB-','Myntra':'MYN-','Amazon':'AMA-','Flipkart':'FLI-','Meesho':'MEE-','Ajio':'AJIO-'};
+function getChannelCodesByCompany(){
+  const receiptDefs = getChannelDefs();
+  const stateDefs = {};
+  Object.keys(STATE_PREFIX).forEach(ch=>{
+    stateDefs[ch] = Object.keys(LEDGER_MAP).filter(c=>(LEDGER_MAP[c].name||'').toUpperCase().startsWith(STATE_PREFIX[ch]));
+  });
+  const out = {};
+  Object.keys(receiptDefs).forEach(ch=>{
+    out[ch] = new Map();
+    const receiptSet = new Set(receiptDefs[ch]);
+    COMPANIES.forEach(comp=>{
+      const cid = comp.id;
+      const hasReceipt = ACTIVE_TRANSACTIONS.some(t=>t.company_id===cid && receiptSet.has(t.code));
+      out[ch].set(cid, hasReceipt ? receiptSet : new Set(stateDefs[ch]||[]));
+    });
+  });
+  return out;
+}
+function sumChannelSeries(channelCodesByCompany, months, metric){
+  const out = {}; months.forEach(m=>out[m]=0);
+  ACTIVE_TRANSACTIONS.forEach(t=>{
+    const codes = channelCodesByCompany.get(t.company_id);
+    if(!codes || !codes.has(t.code)) return;
+    const m = t.date.slice(0,7);
+    if(!(m in out)) return;
+    if(metric==='cr') out[m]+=t.cr; else if(metric==='dr') out[m]+=t.dr; else if(metric==='count') out[m]+=1; else out[m]+=(t.cr-t.dr);
+  });
+  return out;
+}
+function totalChannelForPeriod(channelCodesByCompany, metric, monthsSel){
+  const monthSet = monthsSel && monthsSel.length ? new Set(monthsSel) : null;
+  let s=0;
+  ACTIVE_TRANSACTIONS.forEach(t=>{
+    const codes = channelCodesByCompany.get(t.company_id);
+    if(!codes || !codes.has(t.code)) return;
+    if(monthSet && !monthSet.has(t.date.slice(0,7))) return;
+    if(metric==='cr') s+=t.cr; else if(metric==='dr') s+=t.dr; else if(metric==='count') s+=1; else s+=(t.cr-t.dr);
+  });
+  return s;
+}
+function flatChannelCodes(channelCodesByCompany){
+  const set = new Set();
+  channelCodesByCompany.forEach(codes=>codes.forEach(c=>set.add(c)));
+  return [...set];
+}
+function mergeAllChannelsByCompany(channelCodesByCompany){
+  const merged = new Map();
+  Object.values(channelCodesByCompany).forEach(perCompany=>{
+    perCompany.forEach((codes,cid)=>{
+      if(!merged.has(cid)) merged.set(cid, new Set());
+      codes.forEach(c=>merged.get(cid).add(c));
+    });
+  });
+  return merged;
+}
 function getAdDefs(){
   return {
     'Meta/Facebook': codesByNameContains('FACEBOOK INDIA'),
@@ -767,21 +830,21 @@ function renderSalesPage(monthsSel){
   const months = monthsInData();
   const periodMonths = monthsSel && monthsSel.length ? [...monthsSel].sort() : months;
   const mLabels = periodMonths.map(monthLabel);
-  const channels = getChannelDefs();
-  const chLookup1 = {}; Object.keys(channels).forEach(ch=>chLookup1[ch]=channels[ch]);
+  const channelCodesByCompany = getChannelCodesByCompany();
+  const chNames = Object.keys(channelCodesByCompany);
+  const chLookup1 = {}; chNames.forEach(ch=>chLookup1[ch]=flatChannelCodes(channelCodesByCompany[ch]));
 
   destroyChart('rev1');
   charts.rev1 = makeClickableLine(document.getElementById('chartRevMonthly'), mLabels,
-    Object.keys(channels).map((ch,i)=>({label:ch,data:periodMonths.map(m=>sumSeries(channels[ch],[m],'cr')[m]||0),borderColor:PALETTE[i%PALETTE.length],backgroundColor:'transparent',tension:0.3})),
+    chNames.map((ch,i)=>({label:ch,data:periodMonths.map(m=>sumChannelSeries(channelCodesByCompany[ch],[m],'cr')[m]||0),borderColor:PALETTE[i%PALETTE.length],backgroundColor:'transparent',tension:0.3})),
     periodMonths, chLookup1);
 
-  const chNames = Object.keys(channels);
-  const chTotals = chNames.map(ch=>totalForPeriod(channels[ch],'cr',monthsSel));
+  const chTotals = chNames.map(ch=>totalChannelForPeriod(channelCodesByCompany[ch],'cr',monthsSel));
   const totalSalesPeriod = chTotals.reduce((a,b)=>a+b,0);
   destroyChart('rev2');
-  charts.rev2 = makeDoughnut(document.getElementById('chartRevTotals'), chNames, chTotals, chNames.map(ch=>channels[ch]));
+  charts.rev2 = makeDoughnut(document.getElementById('chartRevTotals'), chNames, chTotals, chNames.map(ch=>flatChannelCodes(channelCodesByCompany[ch])));
   document.getElementById('revTable').innerHTML = `<table class="ldg-table"><thead><tr><th>Channel</th><th class="num">Total Sales</th><th class="num">% of Total</th></tr></thead><tbody>
-    ${chNames.map((ch,i)=>`<tr onclick='openDrill("${ch}","Selected period",${JSON.stringify(channels[ch])},${monthsSel&&monthsSel.length?JSON.stringify(monthsSel):'null'})'><td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${PALETTE[i%PALETTE.length]};margin-right:8px"></span>${ch}</td><td class="num credit">${fmtSigned(chTotals[i])}</td><td class="num">${totalSalesPeriod?(chTotals[i]/totalSalesPeriod*100).toFixed(1):'0'}%</td></tr>`).join('')}
+    ${chNames.map((ch,i)=>`<tr onclick='openDrill("${ch}","Selected period",${JSON.stringify(flatChannelCodes(channelCodesByCompany[ch]))},${monthsSel&&monthsSel.length?JSON.stringify(monthsSel):'null'})'><td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${PALETTE[i%PALETTE.length]};margin-right:8px"></span>${ch}</td><td class="num credit">${fmtSigned(chTotals[i])}</td><td class="num">${totalSalesPeriod?(chTotals[i]/totalSalesPeriod*100).toFixed(1):'0'}%</td></tr>`).join('')}
   </tbody></table>`;
 }
 
@@ -791,29 +854,30 @@ function renderAdsPage(monthsSel){
   const months = monthsInData();
   const periodMonths = monthsSel && monthsSel.length ? [...monthsSel].sort() : months;
   const mLabels = periodMonths.map(monthLabel);
-  const channels = getChannelDefs();
+  const channelCodesByCompany = getChannelCodesByCompany();
+  const allRevByCompany = mergeAllChannelsByCompany(channelCodesByCompany);
+  const allRevCodesFlat = flatChannelCodes(allRevByCompany);
   const ads = getAdDefs();
-  const allRevCodes = Object.values(channels).flat();
   const adNames = Object.keys(ads).filter(a=>ads[a].length);
   const adTotals = adNames.map(a=>totalForPeriod(ads[a],'dr',monthsSel));
   const totalAds = adNames.length ? totalForPeriod(adNames.flatMap(a=>ads[a]),'dr',monthsSel) : 0;
-  const totalRevenue = totalForPeriod(allRevCodes,'cr',monthsSel);
+  const totalRevenue = totalChannelForPeriod(allRevByCompany,'cr',monthsSel);
 
   document.getElementById('adsKpi').innerHTML = `
     <div class="kpi-card"><div class="kpi-label">Total Ad Spend</div><div class="kpi-value debit">${fmtSigned(totalAds)}</div></div>
     <div class="kpi-card"><div class="kpi-label">Of Sales</div><div class="kpi-value gold">${totalRevenue?(totalAds/totalRevenue*100).toFixed(1):'0'}%</div></div>
     <div class="kpi-card"><div class="kpi-label">Implied ROAS</div><div class="kpi-value credit">${totalAds?(totalRevenue/totalAds).toFixed(2):'—'}x</div></div>`;
   destroyChart('ads1');
-  const adLookup = {}; adNames.forEach(a=>adLookup[a]=ads[a]); adLookup['Total Sales']=allRevCodes;
+  const adLookup = {}; adNames.forEach(a=>adLookup[a]=ads[a]); adLookup['Total Sales']=allRevCodesFlat;
   charts.ads1 = new Chart(document.getElementById('chartAdsVsRev'),{
     type:'bar',
     data:{labels:mLabels,datasets:[
       {type:'bar',label:'Ad Spend',data:periodMonths.map(m=>adNames.reduce((s,a)=>s+(sumSeries(ads[a],[m],'dr')[m]||0),0)),backgroundColor:DEBIT,borderRadius:3},
-      {type:'line',label:'Total Sales',data:periodMonths.map(m=>sumSeries(allRevCodes,[m],'cr')[m]||0),borderColor:CREDIT,backgroundColor:'transparent',tension:0.3}
+      {type:'line',label:'Total Sales',data:periodMonths.map(m=>sumChannelSeries(allRevByCompany,[m],'cr')[m]||0),borderColor:CREDIT,backgroundColor:'transparent',tension:0.3}
     ]},
     options:{responsive:true,maintainAspectRatio:false,
       onClick:(evt,elements,chart)=>{ if(elements.length){ const el=elements[0]; const label=chart.data.datasets[el.datasetIndex].label; const month=periodMonths[el.index];
-        const codes = label==='Ad Spend' ? adNames.flatMap(a=>ads[a]) : allRevCodes;
+        const codes = label==='Ad Spend' ? adNames.flatMap(a=>ads[a]) : allRevCodesFlat;
         openDrill(label, monthLabel(month), codes, month); } },
       plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:14,font:{size:11}}},tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmtSigned(c.raw)}`}}},
       scales:{y:{ticks:{callback:v=>'₹'+fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
@@ -849,9 +913,9 @@ function renderOverview(monthsSel){
   const mLabels = periodMonths.map(monthLabel);
   const asOf = monthsSel && monthsSel.length ? periodMonths[periodMonths.length-1] : null;
 
-  const channels = getChannelDefs();
+  const channelCodesByCompany = getChannelCodesByCompany();
+  const allRevByCompany = mergeAllChannelsByCompany(channelCodesByCompany);
   const ads = getAdDefs();
-  const allRevCodes = Object.values(channels).flat();
   const bankCodes = codesByNameContains('HDFC BANK');
   const adCodesFlat = Object.values(ads).flat();
   const adSet = new Set(adCodesFlat);
@@ -859,7 +923,7 @@ function renderOverview(monthsSel){
   const expenseCodes = expenseCodesRaw.filter(c=>!adSet.has(c)); // exclude ad spend — shown as its own KPI, not folded into "expenses"
   const vendorCodes = codesByAtype('113');
 
-  const totalRevenue = totalForPeriod(allRevCodes,'cr',monthsSel);
+  const totalRevenue = totalChannelForPeriod(allRevByCompany,'cr',monthsSel);
   const totalAds = adCodesFlat.length ? totalForPeriod(adCodesFlat,'dr',monthsSel) : 0;
   const totalExpenses = totalForPeriod(expenseCodes,'dr',monthsSel) - totalForPeriod(expenseCodes,'cr',monthsSel);
   const netProfit = totalRevenue - totalExpenses - totalAds;
@@ -887,9 +951,10 @@ function renderOverview(monthsSel){
     <div class="kpi-card"><div class="kpi-label">Vendor Payables</div><div class="kpi-value gold">${fmtSigned(topVendorsUpTo.reduce((s,[,v])=>s+v,0))}</div><div class="kpi-note">Outstanding, top 10, as of period end</div></div>`;
 
   destroyChart('ov1');
-  const chLookupOv = {}; Object.keys(channels).forEach(ch=>chLookupOv[ch]=channels[ch]);
+  const chNamesOv = Object.keys(channelCodesByCompany);
+  const chLookupOv = {}; chNamesOv.forEach(ch=>chLookupOv[ch]=flatChannelCodes(channelCodesByCompany[ch]));
   charts.ov1 = makeClickableBar(document.getElementById('chartOverviewRevenue'), mLabels,
-    Object.keys(channels).map((ch,i)=>({label:ch,data:periodMonths.map(m=>sumSeries(channels[ch],[m],'cr')[m]||0),backgroundColor:PALETTE[i%PALETTE.length],borderRadius:3})),
+    chNamesOv.map((ch,i)=>({label:ch,data:periodMonths.map(m=>sumChannelSeries(channelCodesByCompany[ch],[m],'cr')[m]||0),backgroundColor:PALETTE[i%PALETTE.length],borderRadius:3})),
     periodMonths, chLookupOv, {scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,ticks:{callback:v=>'₹'+fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}}}});
 
   const expByLedgerPeriod = {};
