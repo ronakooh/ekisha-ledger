@@ -235,8 +235,10 @@ html,body{overflow-x:hidden;max-width:100%}
   <main class="main">
     <div id="tab-overview" class="section active">
       <div class="page-header"><div class="page-title">Overview</div><div class="page-sub" id="overviewPeriod">—</div></div>
+      <div class="form-group" style="margin-bottom:16px"><label class="form-label">Period — pick a Financial Year, a quarter, individual months, or leave on Full Year</label><div id="fs-presets-overview" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div><div id="fs-chips-overview" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
       <div class="kpi-grid" id="kpiGrid"></div>
       <div class="card"><div class="card-title">Revenue by channel — monthly</div><div class="card-hint">Click any bar to see the transactions behind it</div><div class="chart-wrap tall" id="wrapOverviewRevenue"><canvas id="chartOverviewRevenue"></canvas></div></div>
+      <div class="card"><div class="card-title">Total expenses by category</div><div class="card-hint">Click a slice to see every entry</div><div class="chart-wrap" id="wrapOverviewExpenses"><canvas id="chartOverviewExpenses"></canvas></div></div>
       <div class="card"><div class="card-title">Bank cumulative position (HDFC)</div><div class="chart-wrap" id="wrapOverviewBank"><canvas id="chartOverviewBank"></canvas></div></div>
     </div>
 
@@ -280,26 +282,26 @@ html,body{overflow-x:hidden;max-width:100%}
 
     <div id="tab-trialbalance" class="section">
       <div class="page-header"><div class="page-title">Trial Balance</div><div class="page-sub">Every ledger's closing balance — debits and credits should tie out</div></div>
-      <div class="form-row" style="margin-bottom:6px"><div class="form-group" style="max-width:220px"><label class="form-label">As of</label><select id="fs-period-trialbalance" onchange="renderFinancialStatement('trialbalance')"></select></div></div>
+      <div class="form-group" style="margin-bottom:6px"><label class="form-label">As of — pick a Financial Year, a quarter, individual months, or leave on Latest</label><div id="fs-presets-trialbalance" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div><div id="fs-chips-trialbalance" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
       <div class="card"><div id="trialBalanceBody"></div></div>
     </div>
 
     <div id="tab-pnl" class="section">
       <div class="page-header"><div class="page-title">Profit &amp; Loss</div><div class="page-sub">Income vs. expense, classified from your actual chart of accounts</div></div>
-      <div class="form-group" style="margin-bottom:14px"><label class="form-label">Period — pick one or more months, or leave on Full Year</label><div id="fs-chips-pnl" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
+      <div class="form-group" style="margin-bottom:14px"><label class="form-label">Period — pick a Financial Year, a quarter, individual months, or leave on Full Year</label><div id="fs-presets-pnl" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div><div id="fs-chips-pnl" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
       <div class="card"><div id="pnlBody"></div></div>
     </div>
 
     <div id="tab-balancesheet" class="section">
       <div class="page-header"><div class="page-title">Balance Sheet</div><div class="page-sub">Assets = Liabilities + Equity, as of a point in time</div></div>
-      <div class="form-row" style="margin-bottom:6px"><div class="form-group" style="max-width:220px"><label class="form-label">As of</label><select id="fs-period-balancesheet" onchange="renderFinancialStatement('balancesheet')"></select></div></div>
+      <div class="form-group" style="margin-bottom:6px"><label class="form-label">As of — pick a Financial Year, a quarter, individual months, or leave on Latest</label><div id="fs-presets-balancesheet" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div><div id="fs-chips-balancesheet" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
       <div class="card"><div id="balanceSheetBody"></div></div>
     </div>
 
     <div id="tab-cashflow" class="section">
       <div class="page-header"><div class="page-title">Cash Flow</div><div class="page-sub">Net movement through Bank and Cash accounts</div></div>
       <div class="card" style="background:var(--surface-2);margin-bottom:16px"><p style="font-size:12px;color:var(--text-2);line-height:1.6">This is a simplified cash summary (opening → net movement → closing), not a formal Operating/Investing/Financing statement — the underlying data doesn't reliably pair each voucher's two sides, so that split isn't shown here to avoid presenting a guess as fact.</p></div>
-      <div class="form-group" style="margin-bottom:14px"><label class="form-label">Period — pick one or more months, or leave on Full Year</label><div id="fs-chips-cashflow" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
+      <div class="form-group" style="margin-bottom:14px"><label class="form-label">Period — pick a Financial Year, a quarter, individual months, or leave on Full Year</label><div id="fs-presets-cashflow" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div><div id="fs-chips-cashflow" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
       <div class="card"><div id="cashFlowBody"></div></div>
     </div>
 
@@ -481,10 +483,10 @@ async function loadData(forceSync){
 async function pullFromDrive(){ await loadData(true); }
 function refreshEverything(){
   renderAll();
-  ['trialbalance','pnl','balancesheet','cashflow'].forEach(renderFinancialStatement);
+  populateFinPeriodSelectors();
+  ['overview','trialbalance','pnl','balancesheet','cashflow'].forEach(renderFinancialStatement);
   renderLedgerSearch();
   renderSavedReports();
-  populateFinPeriodSelectors();
 }
 
 /* ============ COMPANY FILTER ============ */
@@ -555,6 +557,37 @@ function totalFor(codes, metric){
   });
   return s;
 }
+function totalForPeriod(codes, metric, monthsSel){
+  const monthSet = monthsSel && monthsSel.length ? new Set(monthsSel) : null;
+  const set = new Set(codes); let s=0;
+  DATA.transactions.forEach(t=>{
+    if(!set.has(t.ckey)) return;
+    if(monthSet && !monthSet.has(t.date.slice(0,7))) return;
+    if(metric==='cr') s+=t.cr; else if(metric==='dr') s+=t.dr; else if(metric==='count') s+=1; else s+=(t.cr-t.dr);
+  });
+  return s;
+}
+/* Indian Financial Year (April–March) bucketing, used for quick-select presets */
+function fyLabelForMonth(m){
+  const y = Number(m.slice(0,4)), mo = Number(m.slice(5,7));
+  return mo>=4 ? `FY ${y}-${String(y+1).slice(2)}` : `FY ${y-1}-${String(y).slice(2)}`;
+}
+function computeFYBuckets(){
+  const map = {};
+  monthsInData().forEach(m=>{ const lbl=fyLabelForMonth(m); (map[lbl]=map[lbl]||[]).push(m); });
+  return Object.entries(map).map(([label,months])=>({label,months:months.sort()})).sort((a,b)=>a.months[0].localeCompare(b.months[0]));
+}
+function computeQuarterBuckets(){
+  const qDefs = [['Q1 (Apr-Jun)',[4,5,6]],['Q2 (Jul-Sep)',[7,8,9]],['Q3 (Oct-Dec)',[10,11,12]],['Q4 (Jan-Mar)',[1,2,3]]];
+  const out = [];
+  computeFYBuckets().forEach(fy=>{
+    qDefs.forEach(([qlabel,moNums])=>{
+      const qMonths = fy.months.filter(m=>moNums.includes(Number(m.slice(5,7))));
+      if(qMonths.length) out.push({label:`${qlabel} · ${fy.label}`, months:qMonths});
+    });
+  });
+  return out;
+}
 function codesByNameContains(sub){
   sub = sub.toUpperCase();
   return Object.keys(LEDGER_MAP).filter(c => ACTIVE_COMPANIES.has(LEDGER_MAP[c].company_id) && (LEDGER_MAP[c].name||'').toUpperCase().includes(sub));
@@ -604,7 +637,7 @@ function openDrill(title, sub, codes, month){
   const rows = txs.slice(0, 300).map(t=>{
     const net = t.cr - t.dr;
     total += net;
-    return `<tr><td style="font-family:var(--mono);font-size:11.5px;color:var(--text-2)">${t.date}</td><td style="font-size:12px">${LEDGER_MAP[t.code]?.name || t.code}</td><td style="font-size:11px;color:var(--text-3)">${t.type||''}</td><td class="num credit">${t.cr?fmt(t.cr):''}</td><td class="num debit">${t.dr?fmt(t.dr):''}</td></tr>`;
+    return `<tr><td style="font-family:var(--mono);font-size:11.5px;color:var(--text-2)">${t.date}</td><td style="font-size:12px">${ledgerDisplayName(t.ckey) || t.code}</td><td style="font-size:11px;color:var(--text-3)">${t.type||''}</td><td class="num credit">${t.cr?fmt(t.cr):''}</td><td class="num debit">${t.dr?fmt(t.dr):''}</td></tr>`;
   }).join('');
   document.getElementById('drillBody').innerHTML = txs.length
     ? `<div style="max-height:360px;overflow-y:auto"><table class="ldg-table"><thead><tr><th>Date</th><th>Ledger</th><th>Type</th><th class="num">Credit</th><th class="num">Debit</th></tr></thead><tbody>${rows}</tbody></table></div>`
@@ -685,30 +718,14 @@ function renderAll(){
   const netBank = running;
 
   const expByLedger = {};
-  DATA.transactions.forEach(t=>{ if(new Set(expenseCodes).has(t.code)){ expByLedger[t.code]=(expByLedger[t.code]||0)+(t.dr-t.cr); } });
+  DATA.transactions.forEach(t=>{ if(new Set(expenseCodes).has(t.ckey)){ expByLedger[t.ckey]=(expByLedger[t.ckey]||0)+(t.dr-t.cr); } });
   const topExpNames = Object.entries(expByLedger).sort((a,b)=>b[1]-a[1]).filter(([,v])=>v>0).slice(0,8).map(([c])=>c);
 
   const vendorBal = {};
-  DATA.transactions.forEach(t=>{ if(new Set(vendorCodes).has(t.code)){ vendorBal[t.code]=(vendorBal[t.code]||0)+(t.cr-t.dr); } });
+  DATA.transactions.forEach(t=>{ if(new Set(vendorCodes).has(t.ckey)){ vendorBal[t.ckey]=(vendorBal[t.ckey]||0)+(t.cr-t.dr); } });
   const topVendors = Object.entries(vendorBal).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1])).filter(([,v])=>Math.abs(v)>1).slice(0,10);
 
-  document.getElementById('overviewPeriod').textContent = `${monthLabel(months[0])} – ${monthLabel(months[months.length-1])}`;
-  document.getElementById('kpiGrid').innerHTML = `
-    <div class="kpi-card"><div class="kpi-label">Total Revenue</div><div class="kpi-value credit">${fmtSigned(totalRevenue)}</div><div class="kpi-note">All channels, selected period</div></div>
-    <div class="kpi-card"><div class="kpi-label">Total Ad Spend</div><div class="kpi-value debit">${fmtSigned(totalAds)}</div><div class="kpi-note">${totalRevenue?(totalAds/totalRevenue*100).toFixed(1):'0'}% of revenue</div></div>
-    <div class="kpi-card"><div class="kpi-label">Net Bank Position</div><div class="kpi-value ${netBank>=0?'credit':'debit'}">${fmtSigned(netBank)}</div><div class="kpi-note">HDFC, cumulative</div></div>
-    <div class="kpi-card"><div class="kpi-label">Vendor Payables</div><div class="kpi-value gold">${fmtSigned(topVendors.reduce((s,[,v])=>s+v,0))}</div><div class="kpi-note">Outstanding, top 10</div></div>`;
-
-  destroyChart('ov1');
   const chLookup1 = {}; Object.keys(channels).forEach(ch=>chLookup1[ch]=channels[ch]);
-  charts.ov1 = makeClickableBar(document.getElementById('chartOverviewRevenue'), mLabels,
-    Object.keys(channels).map((ch,i)=>({label:ch,data:months.map(m=>sumSeries(channels[ch],[m],'cr')[m]||0),backgroundColor:PALETTE[i%PALETTE.length],borderRadius:3})),
-    months, chLookup1, {scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,ticks:{callback:v=>'₹'+fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}}}});
-
-  destroyChart('ov2');
-  charts.ov2 = makeClickableLine(document.getElementById('chartOverviewBank'), mLabels,
-    [{label:'Bank',data:months.map(m=>bankCum[m]||0),borderColor:GOLD,backgroundColor:'rgba(156,122,46,0.10)',fill:true,tension:0.3}],
-    months, {'Bank':bankCodes});
 
   destroyChart('rev1');
   charts.rev1 = makeClickableLine(document.getElementById('chartRevMonthly'), mLabels,
@@ -786,6 +803,72 @@ function renderAll(){
   charts.bnk2 = makeClickableLine(document.getElementById('chartBankCum'), mLabels,
     [{label:'Cumulative',data:months.map(m=>bankCum[m]||0),borderColor:GOLD,backgroundColor:'rgba(156,122,46,0.10)',fill:true,tension:0.3}],
     months, {'Cumulative':bankCodes});
+}
+
+/* ============ OVERVIEW (period-filterable, separate from the other unfiltered tabs) ============ */
+function renderOverview(monthsSel){
+  if(!DATA) return;
+  const months = monthsInData();
+  const periodMonths = monthsSel && monthsSel.length ? [...monthsSel].sort() : months;
+  const mLabels = periodMonths.map(monthLabel);
+  const asOf = monthsSel && monthsSel.length ? periodMonths[periodMonths.length-1] : null;
+
+  const channels = getChannelDefs();
+  const ads = getAdDefs();
+  const allRevCodes = Object.values(channels).flat();
+  const bankCodes = codesByNameContains('HDFC BANK');
+  const expenseCodes = [...new Set([...codesByAtype('4'), ...codesByAtype('10'), ...codesByAtype('8'), ...codesByAtype('3')])];
+  const vendorCodes = codesByAtype('113');
+
+  const totalRevenue = totalForPeriod(allRevCodes,'cr',monthsSel);
+  const totalAds = Object.values(ads).flat().length ? totalForPeriod(Object.values(ads).flat(),'dr',monthsSel) : 0;
+  const totalExpenses = totalForPeriod(expenseCodes,'dr',monthsSel) - totalForPeriod(expenseCodes,'cr',monthsSel);
+
+  const bankSumsAll = sumSeries(bankCodes, months, 'net');
+  let running=0; const bankCumAll={};
+  months.forEach(m=>{ running += bankSumsAll[m]; bankCumAll[m]=running; });
+  const netBank = asOf ? (bankCumAll[asOf]||0) : running;
+
+  const vendorSumsUpTo = perLedgerSumsUpTo(vendorCodes, asOf);
+  const vendorBalUpTo = {};
+  vendorCodes.forEach(c=>{ const v = vendorSumsUpTo[c].cr - vendorSumsUpTo[c].dr; if(Math.abs(v)>1) vendorBalUpTo[c]=v; });
+  const topVendorsUpTo = Object.entries(vendorBalUpTo).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1])).slice(0,10);
+
+  document.getElementById('overviewPeriod').textContent = monthsSel && monthsSel.length
+    ? (periodMonths.length===1 ? monthLabel(periodMonths[0]) : `${monthLabel(periodMonths[0])} – ${monthLabel(periodMonths[periodMonths.length-1])}`)
+    : `${monthLabel(months[0])} – ${monthLabel(months[months.length-1])}`;
+
+  document.getElementById('kpiGrid').innerHTML = `
+    <div class="kpi-card"><div class="kpi-label">Total Revenue</div><div class="kpi-value credit">${fmtSigned(totalRevenue)}</div><div class="kpi-note">All channels, selected period</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Expenses</div><div class="kpi-value debit">${fmtSigned(totalExpenses)}</div><div class="kpi-note">${totalRevenue?(totalExpenses/totalRevenue*100).toFixed(1):'0'}% of revenue</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Ad Spend</div><div class="kpi-value debit">${fmtSigned(totalAds)}</div><div class="kpi-note">${totalRevenue?(totalAds/totalRevenue*100).toFixed(1):'0'}% of revenue</div></div>
+    <div class="kpi-card"><div class="kpi-label">Net Bank Position</div><div class="kpi-value ${netBank>=0?'credit':'debit'}">${fmtSigned(netBank)}</div><div class="kpi-note">HDFC, as of period end</div></div>
+    <div class="kpi-card"><div class="kpi-label">Vendor Payables</div><div class="kpi-value gold">${fmtSigned(topVendorsUpTo.reduce((s,[,v])=>s+v,0))}</div><div class="kpi-note">Outstanding, top 10, as of period end</div></div>`;
+
+  destroyChart('ov1');
+  const chLookupOv = {}; Object.keys(channels).forEach(ch=>chLookupOv[ch]=channels[ch]);
+  charts.ov1 = makeClickableBar(document.getElementById('chartOverviewRevenue'), mLabels,
+    Object.keys(channels).map((ch,i)=>({label:ch,data:periodMonths.map(m=>sumSeries(channels[ch],[m],'cr')[m]||0),backgroundColor:PALETTE[i%PALETTE.length],borderRadius:3})),
+    periodMonths, chLookupOv, {scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,ticks:{callback:v=>'₹'+fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}}}});
+
+  const expByLedgerPeriod = {};
+  const expSet = new Set(expenseCodes);
+  const monthSetForExp = monthsSel && monthsSel.length ? new Set(monthsSel) : null;
+  DATA.transactions.forEach(t=>{
+    if(!expSet.has(t.ckey)) return;
+    if(monthSetForExp && !monthSetForExp.has(t.date.slice(0,7))) return;
+    expByLedgerPeriod[t.ckey] = (expByLedgerPeriod[t.ckey]||0) + (t.dr - t.cr);
+  });
+  const expEntries = Object.entries(expByLedgerPeriod).filter(([,v])=>v>0.5).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  destroyChart('ovExp');
+  if(expEntries.length){
+    charts.ovExp = makeDoughnut(document.getElementById('chartOverviewExpenses'), expEntries.map(([c])=>ledgerDisplayName(c)), expEntries.map(([,v])=>v), expEntries.map(([c])=>[c]));
+  }
+
+  destroyChart('ov2');
+  charts.ov2 = makeClickableLine(document.getElementById('chartOverviewBank'), mLabels,
+    [{label:'Bank',data:periodMonths.map(m=>bankCumAll[m]||0),borderColor:GOLD,backgroundColor:'rgba(156,122,46,0.10)',fill:true,tension:0.3}],
+    periodMonths, {'Bank':bankCodes});
 }
 
 /* ============ REPORT BUILDER ============ */
@@ -935,14 +1018,27 @@ function computeNetProfitUpTo(asOfMonth){
   let totalI=0; iC.forEach(c=>totalI+=i[c].dr-i[c].cr);
   return totalInc - totalD - totalI;
 }
-const finMultiSelection = { pnl: null, cashflow: null }; // null = Full Year, else Set of 'YYYY-MM'
+const FIN_KINDS = ['overview','trialbalance','pnl','balancesheet','cashflow'];
+const finMultiSelection = { overview:null, trialbalance:null, pnl:null, balancesheet:null, cashflow:null }; // null = Full Year, else Set of 'YYYY-MM'
+
 function renderPeriodChips(kind){
   const months = monthsInData();
   const sel = finMultiSelection[kind];
+  const presetsWrap = document.getElementById('fs-presets-'+kind);
   const wrap = document.getElementById('fs-chips-'+kind);
   if(!wrap) return;
-  const chipHtml = (label, active, onclick) =>
-    `<span onclick="${onclick}" style="cursor:pointer;display:inline-flex;align-items:center;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;border:1px solid ${active?'rgba(156,122,46,0.3)':'var(--border)'};background:${active?'var(--gold-dim)':'var(--surface-2)'};color:${active?'var(--gold)':'var(--text-2)'}">${label}</span>`;
+  const chipHtml = (label, active, onclick, title) =>
+    `<span onclick="${onclick}" title="${title||''}" style="cursor:pointer;display:inline-flex;align-items:center;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;border:1px solid ${active?'rgba(156,122,46,0.3)':'var(--border)'};background:${active?'var(--gold-dim)':'var(--surface-2)'};color:${active?'var(--gold)':'var(--text-2)'}">${label}</span>`;
+
+  if(presetsWrap){
+    const fyBuckets = computeFYBuckets();
+    const qBuckets = computeQuarterBuckets();
+    const isActiveSet = (bucketMonths) => sel && bucketMonths.length===sel.size && bucketMonths.every(m=>sel.has(m));
+    let presetHtml = fyBuckets.map(fy=>chipHtml(fy.label, isActiveSet(fy.months), `setFinMonths('${kind}',${JSON.stringify(fy.months)})`, 'Financial Year')).join('');
+    presetHtml += qBuckets.map(q=>chipHtml(q.label, isActiveSet(q.months), `setFinMonths('${kind}',${JSON.stringify(q.months)})`, 'Quarter')).join('');
+    presetsWrap.innerHTML = presetHtml;
+  }
+
   let html = chipHtml('Full Year', sel===null, `setFinFullYear('${kind}')`);
   months.forEach(m=>{
     html += chipHtml(monthLabel(m), !!(sel && sel.has(m)), `toggleFinMonth('${kind}','${m}')`);
@@ -950,6 +1046,7 @@ function renderPeriodChips(kind){
   wrap.innerHTML = html;
 }
 function setFinFullYear(kind){ finMultiSelection[kind]=null; renderPeriodChips(kind); renderFinancialStatement(kind); }
+function setFinMonths(kind, monthsArr){ finMultiSelection[kind] = new Set(monthsArr); renderPeriodChips(kind); renderFinancialStatement(kind); }
 function toggleFinMonth(kind, m){
   if(!finMultiSelection[kind]) finMultiSelection[kind] = new Set();
   if(finMultiSelection[kind].has(m)) finMultiSelection[kind].delete(m); else finMultiSelection[kind].add(m);
@@ -958,21 +1055,15 @@ function toggleFinMonth(kind, m){
   renderFinancialStatement(kind);
 }
 function populateFinPeriodSelectors(){
-  const months = monthsInData();
-  ['trialbalance','balancesheet'].forEach(kind=>{
-    const el = document.getElementById('fs-period-'+kind);
-    if(!el) return;
-    el.innerHTML = `<option value="">Full Year</option>` + months.map(m=>`<option value="${m}">${monthLabel(m)}</option>`).join('');
-  });
-  renderPeriodChips('pnl');
-  renderPeriodChips('cashflow');
+  FIN_KINDS.forEach(kind=>renderPeriodChips(kind));
 }
-function getPeriodValue(kind){ const el=document.getElementById('fs-period-'+kind); return el && el.value ? el.value : null; }
+function selectedMonthsArr(kind){ return finMultiSelection[kind] ? [...finMultiSelection[kind]].sort() : null; }
 function renderFinancialStatement(kind){
-  if(kind==='trialbalance') renderTrialBalance(getPeriodValue('trialbalance'));
-  else if(kind==='balancesheet') renderBalanceSheet(getPeriodValue('balancesheet'));
-  else if(kind==='pnl') renderPnL(finMultiSelection.pnl ? [...finMultiSelection.pnl] : null);
-  else if(kind==='cashflow') renderCashFlow(finMultiSelection.cashflow ? [...finMultiSelection.cashflow] : null);
+  if(kind==='overview') renderOverview(selectedMonthsArr('overview'));
+  else if(kind==='trialbalance'){ const m=selectedMonthsArr('trialbalance'); renderTrialBalance(m && m.length ? m[m.length-1] : null); }
+  else if(kind==='balancesheet'){ const m=selectedMonthsArr('balancesheet'); renderBalanceSheet(m && m.length ? m[m.length-1] : null); }
+  else if(kind==='pnl') renderPnL(selectedMonthsArr('pnl'));
+  else if(kind==='cashflow') renderCashFlow(selectedMonthsArr('cashflow'));
 }
 
 function renderTrialBalance(asOfMonth){
