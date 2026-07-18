@@ -246,21 +246,21 @@ html,body{overflow-x:hidden;max-width:100%}
     <div id="tab-revenue" class="section">
       <div class="page-header"><div class="page-title">Sales by Channel</div><div class="page-sub">Website · Myntra · Amazon · Flipkart · Meesho · Ajio</div></div>
       <div class="form-group" style="margin-bottom:16px"><label class="form-label">Period — pick a Financial Year, a quarter, individual months, or leave on Full Year</label><div id="fs-presets-revenue" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div><div id="fs-chips-revenue" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
-      <div class="card"><div class="card-title">Monthly sales by channel</div><div class="card-hint">Click a point to drill into that month</div><div class="chart-wrap tall" id="wrapRevMonthly"><canvas id="chartRevMonthly"></canvas></div></div>
+      <div class="card"><div class="card-title">Monthly sales by channel</div><div class="card-hint">Click a point to see sales vs returns</div><div class="chart-wrap tall" id="wrapRevMonthly"><canvas id="chartRevMonthly"></canvas></div></div>
       <div class="card"><div class="card-title">Channel totals — selected period</div><div class="chart-wrap" id="wrapRevTotals"><canvas id="chartRevTotals"></canvas></div></div>
-      <div class="card"><div class="card-title">Channel breakdown table</div><div class="card-hint">Click a row to see every transaction</div><div id="revTable"></div></div>
-      <div class="card"><div class="card-title">Sales by shipping state</div><div class="card-hint">Click a bar to see every transaction shipped there</div><div class="chart-wrap tall" id="wrapRevByState"><canvas id="chartRevByState"></canvas></div></div>
-      <div class="card"><div class="card-title">State breakdown table</div><div id="revStateTable"></div></div>
+      <div class="card"><div class="card-title">Sales vs Returns by channel</div><div class="card-hint">Click a row to see the monthly trend and return rate</div><div id="revTable"></div></div>
+      <div class="card"><div class="card-title">Sales by shipping state</div><div class="card-hint">Click a bar to see sales vs returns for that state</div><div class="chart-wrap tall" id="wrapRevByState"><canvas id="chartRevByState"></canvas></div></div>
+      <div class="card"><div class="card-title">Sales vs Returns by shipping state</div><div id="revStateTable"></div></div>
     </div>
 
     <div id="tab-salesreturns" class="section">
       <div class="page-header"><div class="page-title">Sales Returns</div><div class="page-sub">Goods returned by customers, by channel and shipping state</div></div>
       <div class="form-group" style="margin-bottom:16px"><label class="form-label">Period — pick a Financial Year, a quarter, individual months, or leave on Full Year</label><div id="fs-presets-salesreturns" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div><div id="fs-chips-salesreturns" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
-      <div class="card"><div class="card-title">Monthly returns by channel</div><div class="card-hint">Click a point to drill into that month</div><div class="chart-wrap tall" id="wrapRetMonthly"><canvas id="chartRetMonthly"></canvas></div></div>
+      <div class="card"><div class="card-title">Monthly returns by channel</div><div class="card-hint">Click a point to see sales vs returns</div><div class="chart-wrap tall" id="wrapRetMonthly"><canvas id="chartRetMonthly"></canvas></div></div>
       <div class="card"><div class="card-title">Channel totals — selected period</div><div class="chart-wrap" id="wrapRetTotals"><canvas id="chartRetTotals"></canvas></div></div>
-      <div class="card"><div class="card-title">Channel breakdown table</div><div class="card-hint">Click a row to see every transaction</div><div id="retTable"></div></div>
-      <div class="card"><div class="card-title">Returns by shipping state</div><div class="card-hint">Click a bar to see every transaction</div><div class="chart-wrap tall" id="wrapRetByState"><canvas id="chartRetByState"></canvas></div></div>
-      <div class="card"><div class="card-title">State breakdown table</div><div id="retStateTable"></div></div>
+      <div class="card"><div class="card-title">Sales vs Returns by channel</div><div class="card-hint">Click a row to see the monthly trend and return rate</div><div id="retTable"></div></div>
+      <div class="card"><div class="card-title">Returns by shipping state</div><div class="card-hint">Click a bar to see sales vs returns for that state</div><div class="chart-wrap tall" id="wrapRetByState"><canvas id="chartRetByState"></canvas></div></div>
+      <div class="card"><div class="card-title">Sales vs Returns by shipping state</div><div id="retStateTable"></div></div>
     </div>
 
     <div id="tab-ads" class="section">
@@ -890,6 +890,85 @@ function openDrill(title, sub, codes, month){
 function closeDrill(){ document.getElementById('drillModal').classList.remove('open'); }
 document.getElementById('drillModal').addEventListener('click', e=>{ if(e.target===e.currentTarget) closeDrill(); });
 
+/* Sales vs Returns, for a given channel or shipping state — shows a
+   monthly Sales/Returns chart, a compact table, and the return rate.
+   Uses report data (exact) where available, falling back to ledger
+   refcode matching (dr=sale, cr=return) for periods with no report yet. */
+function salesReturnsMonthlyForCodes(codes, monthsSel){
+  const months = monthsSel && monthsSel.length ? [...monthsSel].sort() : monthsInData();
+  const codeSet = new Set(codes);
+  const salesByMonth = {}, returnsByMonth = {};
+  months.forEach(m=>{ salesByMonth[m]=0; returnsByMonth[m]=0; });
+
+  const reportSales = reportRecordsFor('sales_register');
+  const reportReturns = reportRecordsFor('sales_returns');
+  const hasReportSales = reportSales.some(r=>codeSet.has(r.party));
+  const hasReportReturns = reportReturns.some(r=>codeSet.has(r.party));
+
+  if(hasReportSales){
+    reportSales.forEach(r=>{ if(codeSet.has(r.party) && r.month in salesByMonth) salesByMonth[r.month]+=r.bill_amt; });
+  } else {
+    ACTIVE_TRANSACTIONS.forEach(t=>{
+      if(t.refcode!==SALES_REFCODE || !codeSet.has(t.code)) return;
+      const m=t.date.slice(0,7); if(m in salesByMonth) salesByMonth[m]+=t.dr;
+    });
+  }
+  if(hasReportReturns){
+    reportReturns.forEach(r=>{ if(codeSet.has(r.party) && r.month in returnsByMonth) returnsByMonth[r.month]+=Math.abs(r.bill_amt); });
+  } else {
+    ACTIVE_TRANSACTIONS.forEach(t=>{
+      if(t.refcode!==SALES_RETURN_REFCODE || !codeSet.has(t.code)) return;
+      const m=t.date.slice(0,7); if(m in returnsByMonth) returnsByMonth[m]+=t.cr;
+    });
+  }
+  return {months, salesByMonth, returnsByMonth};
+}
+function openSalesReturnsDrill(name, codes, monthsSel){
+  const {months, salesByMonth, returnsByMonth} = salesReturnsMonthlyForCodes(codes, monthsSel);
+  const mLabels = months.map(monthLabel);
+  const totalSales = Object.values(salesByMonth).reduce((a,b)=>a+b,0);
+  const totalReturns = Object.values(returnsByMonth).reduce((a,b)=>a+b,0);
+  const returnPct = totalSales ? (totalReturns/totalSales*100) : 0;
+
+  document.getElementById('drillTitle').textContent = name;
+  document.getElementById('drillSub').textContent = monthsSel && monthsSel.length ? `${monthsSel.length} month${monthsSel.length!==1?'s':''} selected` : 'Full year';
+  document.getElementById('drillBody').innerHTML = `
+    <div class="chart-wrap" style="height:200px;margin-bottom:14px"><canvas id="drillMiniChart"></canvas></div>
+    <div style="max-height:220px;overflow-y:auto"><table class="ldg-table"><thead><tr><th>Month</th><th class="num">Sales</th><th class="num">Returns</th><th class="num">Return %</th></tr></thead><tbody>
+      ${months.map(m=>{
+        const s=salesByMonth[m]||0, r=returnsByMonth[m]||0, pct = s ? (r/s*100) : 0;
+        return `<tr><td>${monthLabel(m)}</td><td class="num credit">${s?fmt(s):'—'}</td><td class="num debit">${r?fmt(r):'—'}</td><td class="num">${s?pct.toFixed(1)+'%':'—'}</td></tr>`;
+      }).join('')}
+    </tbody></table></div>`;
+  document.getElementById('drillTotal').innerHTML = `<span>Sales ${fmtSigned(totalSales)} · Returns ${fmtSigned(totalReturns)}</span><span style="color:${returnPct>10?'var(--debit)':'var(--gold)'}">${returnPct.toFixed(1)}% return rate</span>`;
+  document.getElementById('drillModal').classList.add('open');
+
+  destroyChart('drillMiniChart');
+  charts.drillMiniChart = new Chart(document.getElementById('drillMiniChart'), {
+    type:'bar',
+    data:{labels:mLabels, datasets:[
+      {label:'Sales', data:months.map(m=>salesByMonth[m]||0), backgroundColor:CREDIT, borderRadius:3},
+      {label:'Returns', data:months.map(m=>-(returnsByMonth[m]||0)), backgroundColor:DEBIT, borderRadius:3}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:12,font:{size:10.5}}},
+        tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmtSigned(Math.abs(c.raw))}`}}},
+      scales:{y:{ticks:{callback:v=>'₹'+fmt(Math.abs(v))},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
+  });
+}
+/* Combined Sales+Returns breakdown table (Sales, Returns, Return %) — used
+   by both the Sales and Sales Returns pages so the two are always shown
+   side by side, not as two disconnected numbers. */
+function renderCombinedBreakdownTable(containerId, groupLabel, names, salesTotals, returnTotals, codesByGroup, monthsSel){
+  document.getElementById(containerId).innerHTML = `<table class="ldg-table"><thead><tr><th>${groupLabel}</th><th class="num">Sales</th><th class="num">Returns</th><th class="num">Return %</th></tr></thead><tbody>
+    ${names.map(name=>{
+      const s = salesTotals[name]||0, r = Math.abs(returnTotals[name]||0);
+      const pct = s ? (r/s*100) : 0;
+      return `<tr style="cursor:pointer" onclick='openSalesReturnsDrill(${JSON.stringify(name)},${JSON.stringify(codesByGroup[name]||[])},${monthsSel&&monthsSel.length?JSON.stringify(monthsSel):'null'})'><td>${name}</td><td class="num credit">${fmt(s)}</td><td class="num debit">${r?fmt(r):'—'}</td><td class="num" style="color:${pct>10?'var(--debit)':'var(--text-2)'}">${s?pct.toFixed(1)+'%':'—'}</td></tr>`;
+    }).join('')}
+  </tbody></table>`;
+}
+
 /* Expense category → vendor breakdown, using refcode (each transaction's
    real counter-party ledger, not a heuristic) — then vendor → transactions. */
 function openExpenseVendorDrill(code, categoryName){
@@ -931,48 +1010,49 @@ function openDrillByVendor(code, vendor, categoryName){
 /* ============ CHART BUILDERS (all click-enabled) ============ */
 function destroyChart(id){ if(charts[id]){ charts[id].destroy(); delete charts[id]; } }
 
-function onBarClick(evt, elements, chart, seriesCodesLookup, months){
+function onBarClick(evt, elements, chart, seriesCodesLookup, months, onItemClick){
   if(!elements.length) return;
   const el = elements[0];
   const datasetLabel = chart.data.datasets[el.datasetIndex].label;
   const month = months[el.index];
   const codes = seriesCodesLookup[datasetLabel] || [];
-  openDrill(datasetLabel, monthLabel(month), codes, month);
+  if(onItemClick) onItemClick(datasetLabel, codes, month);
+  else openDrill(datasetLabel, monthLabel(month), codes, month);
 }
 
-function makeClickableBar(ctx, labels, datasets, months, seriesCodesLookup, opts={}){
+function makeClickableBar(ctx, labels, datasets, months, seriesCodesLookup, opts={}, onItemClick){
   return new Chart(ctx,{type:'bar',data:{labels,datasets},options:Object.assign({
     responsive:true,maintainAspectRatio:false,
-    onClick:(evt,elements,chart)=>onBarClick(evt,elements,chart,seriesCodesLookup,months),
+    onClick:(evt,elements,chart)=>onBarClick(evt,elements,chart,seriesCodesLookup,months,onItemClick),
     plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:14,font:{size:11}}},
       tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmtSigned(c.raw)} · click to drill in`}}},
     scales:{y:{ticks:{callback:v=>'₹'+fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}
   },opts)});
 }
-function makeClickableLine(ctx, labels, datasets, months, seriesCodesLookup, opts={}){
+function makeClickableLine(ctx, labels, datasets, months, seriesCodesLookup, opts={}, onItemClick){
   return new Chart(ctx,{type:'line',data:{labels,datasets},options:Object.assign({
     responsive:true,maintainAspectRatio:false,
     interaction:{mode:'index',intersect:false},
     onClick:(evt,elements,chart)=>{
       const points = chart.getElementsAtEventForMode(evt,'nearest',{intersect:true},true);
-      if(points.length) onBarClick(evt,points,chart,seriesCodesLookup,months);
+      if(points.length) onBarClick(evt,points,chart,seriesCodesLookup,months,onItemClick);
     },
     plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:14,font:{size:11}}},
       tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmtSigned(c.raw)}`}}},
     scales:{y:{ticks:{callback:v=>'₹'+fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}
   },opts)});
 }
-function makeHBar(ctx, labels, data, color, codesPerBar, onBarClick){
+function makeHBar(ctx, labels, data, color, codesPerBar, onBarClickCb){
   return new Chart(ctx,{type:'bar',data:{labels,datasets:[{data,backgroundColor:color,borderRadius:4}]},
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
-      onClick:(evt,elements,chart)=>{ if(elements.length){ const i=elements[0].index; (onBarClick || ((label,codes)=>openDrill(label,'Full FY',codes,null)))(labels[i], codesPerBar[i]); } },
+      onClick:(evt,elements,chart)=>{ if(elements.length){ const i=elements[0].index; (onBarClickCb || ((label,codes)=>openDrill(label,'Full FY',codes,null)))(labels[i], codesPerBar[i]); } },
       plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmtSigned(c.raw)} · click to drill in`}}},
       scales:{x:{ticks:{callback:v=>'₹'+fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},y:{grid:{display:false}}}}});
 }
-function makeDoughnut(ctx, labels, data, codesPerSlice){
+function makeDoughnut(ctx, labels, data, codesPerSlice, onSliceClick){
   return new Chart(ctx,{type:'doughnut',data:{labels,datasets:[{data,backgroundColor:PALETTE,borderColor:'#ffffff',borderWidth:2}]},
     options:{responsive:true,maintainAspectRatio:false,
-      onClick:(evt,elements,chart)=>{ if(elements.length){ const i=elements[0].index; openDrill(labels[i], 'Full FY', codesPerSlice[i], null); } },
+      onClick:(evt,elements,chart)=>{ if(elements.length){ const i=elements[0].index; (onSliceClick ? onSliceClick(labels[i],codesPerSlice[i]) : openDrill(labels[i], 'Full FY', codesPerSlice[i], null)); } },
       plugins:{legend:{position:'right',labels:{boxWidth:10,padding:12,font:{size:11}}},
         tooltip:{callbacks:{label:c=>` ${c.label}: ${fmtSigned(c.raw)} · click to drill in`}}}}});
 }
@@ -1038,30 +1118,31 @@ function renderSalesPage(monthsSel){
   const periodMonths = monthsSel && monthsSel.length ? [...monthsSel].sort() : months;
   const mLabels = periodMonths.map(monthLabel);
   const byChannel = salesByChannel(monthsSel);
+  const byChannelRet = salesReturnByChannel(monthsSel);
   const chNames = Object.keys(byChannel.totals);
+  const chCodesByGroup = Object.fromEntries(chNames.map(ch=>[ch, [...new Set([...(byChannel.codesByGroup[ch]||[]), ...(byChannelRet.codesByGroup[ch]||[])])]]));
+
+  const drillCb = (name, codes) => openSalesReturnsDrill(name, codes, monthsSel);
 
   destroyChart('rev1');
   const monthlyByChannel = salesByChannel(null); // full range for the monthly trend, independent of the period filter's own total
   charts.rev1 = makeClickableLine(document.getElementById('chartRevMonthly'), mLabels,
     chNames.map((ch,i)=>({label:ch,data:periodMonths.map(m=>(monthlyByChannel.perMonth[ch]||{})[m]||0),borderColor:PALETTE[i%PALETTE.length],backgroundColor:'transparent',tension:0.3})),
-    periodMonths, Object.fromEntries(chNames.map(ch=>[ch, byChannel.codesByGroup[ch]||[]])));
+    periodMonths, chCodesByGroup, {}, (label,codes,month)=>openSalesReturnsDrill(label,codes,month?[month]:monthsSel));
 
   const chTotals = chNames.map(ch=>byChannel.totals[ch]);
-  const totalSalesPeriod = chTotals.reduce((a,b)=>a+b,0);
   destroyChart('rev2');
-  charts.rev2 = makeDoughnut(document.getElementById('chartRevTotals'), chNames, chTotals, chNames.map(ch=>byChannel.codesByGroup[ch]||[]));
-  document.getElementById('revTable').innerHTML = `<table class="ldg-table"><thead><tr><th>Channel</th><th class="num">Total Sales</th><th class="num">% of Total</th></tr></thead><tbody>
-    ${chNames.map((ch,i)=>`<tr onclick='openDrill("${ch}","Selected period",${JSON.stringify(byChannel.codesByGroup[ch]||[])},${monthsSel&&monthsSel.length?JSON.stringify(monthsSel):'null'})'><td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${PALETTE[i%PALETTE.length]};margin-right:8px"></span>${ch}</td><td class="num credit">${fmtSigned(chTotals[i])}</td><td class="num">${totalSalesPeriod?(chTotals[i]/totalSalesPeriod*100).toFixed(1):'0'}%</td></tr>`).join('')}
-  </tbody></table>`;
+  charts.rev2 = makeDoughnut(document.getElementById('chartRevTotals'), chNames, chTotals, chNames.map(ch=>chCodesByGroup[ch]||[]), drillCb);
+  renderCombinedBreakdownTable('revTable', 'Channel', chNames, byChannel.totals, byChannelRet.totals, chCodesByGroup, monthsSel);
 
   const byState = salesByState(monthsSel);
+  const byStateRet = salesReturnByState(monthsSel);
   const stateNames = Object.keys(byState.totals).sort((a,b)=>byState.totals[b]-byState.totals[a]);
   const stateVals = stateNames.map(s=>byState.totals[s]);
+  const stateCodesByGroup = Object.fromEntries(stateNames.map(s=>[s, [...new Set([...(byState.codesByGroup[s]||[]), ...(byStateRet.codesByGroup[s]||[])])]]));
   destroyChart('revState');
-  charts.revState = makeHBar(document.getElementById('chartRevByState'), stateNames.slice(0,15), stateVals.slice(0,15), CREDIT, stateNames.slice(0,15).map(s=>byState.codesByGroup[s]||[]));
-  document.getElementById('revStateTable').innerHTML = `<table class="ldg-table"><thead><tr><th>Shipping State</th><th class="num">Total Sales</th><th class="num">% of Total</th></tr></thead><tbody>
-    ${stateNames.map((s,i)=>`<tr onclick='openDrill(${JSON.stringify(s)},"Selected period",${JSON.stringify(byState.codesByGroup[s]||[])},${monthsSel&&monthsSel.length?JSON.stringify(monthsSel):'null'})'><td>${s}</td><td class="num credit">${fmtSigned(stateVals[i])}</td><td class="num">${totalSalesPeriod?(stateVals[i]/totalSalesPeriod*100).toFixed(1):'0'}%</td></tr>`).join('')}
-  </tbody></table>`;
+  charts.revState = makeHBar(document.getElementById('chartRevByState'), stateNames.slice(0,15), stateVals.slice(0,15), CREDIT, stateNames.slice(0,15).map(s=>stateCodesByGroup[s]||[]), drillCb);
+  renderCombinedBreakdownTable('revStateTable', 'Shipping State', stateNames, byState.totals, byStateRet.totals, stateCodesByGroup, monthsSel);
 }
 
 /* ============ SALES RETURNS (period-filterable, mirrors Sales) ============ */
@@ -1071,30 +1152,31 @@ function renderSalesReturnsPage(monthsSel){
   const periodMonths = monthsSel && monthsSel.length ? [...monthsSel].sort() : months;
   const mLabels = periodMonths.map(monthLabel);
   const byChannel = salesReturnByChannel(monthsSel);
+  const byChannelSales = salesByChannel(monthsSel);
   const chNames = Object.keys(byChannel.totals);
+  const chCodesByGroup = Object.fromEntries(chNames.map(ch=>[ch, [...new Set([...(byChannel.codesByGroup[ch]||[]), ...(byChannelSales.codesByGroup[ch]||[])])]]));
+
+  const drillCb = (name, codes) => openSalesReturnsDrill(name, codes, monthsSel);
 
   destroyChart('ret1');
   const monthlyByChannel = salesReturnByChannel(null);
   charts.ret1 = makeClickableLine(document.getElementById('chartRetMonthly'), mLabels,
     chNames.map((ch,i)=>({label:ch,data:periodMonths.map(m=>(monthlyByChannel.perMonth[ch]||{})[m]||0),borderColor:PALETTE[i%PALETTE.length],backgroundColor:'transparent',tension:0.3})),
-    periodMonths, Object.fromEntries(chNames.map(ch=>[ch, byChannel.codesByGroup[ch]||[]])));
+    periodMonths, chCodesByGroup, {}, (label,codes,month)=>openSalesReturnsDrill(label,codes,month?[month]:monthsSel));
 
   const chTotals = chNames.map(ch=>byChannel.totals[ch]);
-  const totalRetPeriod = chTotals.reduce((a,b)=>a+b,0);
   destroyChart('ret2');
-  charts.ret2 = makeDoughnut(document.getElementById('chartRetTotals'), chNames, chTotals, chNames.map(ch=>byChannel.codesByGroup[ch]||[]));
-  document.getElementById('retTable').innerHTML = `<table class="ldg-table"><thead><tr><th>Channel</th><th class="num">Total Returns</th><th class="num">% of Total</th></tr></thead><tbody>
-    ${chNames.map((ch,i)=>`<tr onclick='openDrill("${ch} — Returns","Selected period",${JSON.stringify(byChannel.codesByGroup[ch]||[])},${monthsSel&&monthsSel.length?JSON.stringify(monthsSel):'null'})'><td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${PALETTE[i%PALETTE.length]};margin-right:8px"></span>${ch}</td><td class="num debit">${fmtSigned(chTotals[i])}</td><td class="num">${totalRetPeriod?(chTotals[i]/totalRetPeriod*100).toFixed(1):'0'}%</td></tr>`).join('')}
-  </tbody></table>`;
+  charts.ret2 = makeDoughnut(document.getElementById('chartRetTotals'), chNames, chTotals, chNames.map(ch=>chCodesByGroup[ch]||[]), drillCb);
+  renderCombinedBreakdownTable('retTable', 'Channel', chNames, byChannelSales.totals, byChannel.totals, chCodesByGroup, monthsSel);
 
   const byState = salesReturnByState(monthsSel);
+  const byStateSales = salesByState(monthsSel);
   const stateNames = Object.keys(byState.totals).sort((a,b)=>byState.totals[b]-byState.totals[a]);
   const stateVals = stateNames.map(s=>byState.totals[s]);
+  const stateCodesByGroup = Object.fromEntries(stateNames.map(s=>[s, [...new Set([...(byState.codesByGroup[s]||[]), ...(byStateSales.codesByGroup[s]||[])])]]));
   destroyChart('retState');
-  charts.retState = makeHBar(document.getElementById('chartRetByState'), stateNames.slice(0,15), stateVals.slice(0,15), DEBIT, stateNames.slice(0,15).map(s=>byState.codesByGroup[s]||[]));
-  document.getElementById('retStateTable').innerHTML = `<table class="ldg-table"><thead><tr><th>Shipping State</th><th class="num">Total Returns</th><th class="num">% of Total</th></tr></thead><tbody>
-    ${stateNames.map((s,i)=>`<tr onclick='openDrill(${JSON.stringify(s+" — Returns")},"Selected period",${JSON.stringify(byState.codesByGroup[s]||[])},${monthsSel&&monthsSel.length?JSON.stringify(monthsSel):'null'})'><td>${s}</td><td class="num debit">${fmtSigned(stateVals[i])}</td><td class="num">${totalRetPeriod?(stateVals[i]/totalRetPeriod*100).toFixed(1):'0'}%</td></tr>`).join('')}
-  </tbody></table>`;
+  charts.retState = makeHBar(document.getElementById('chartRetByState'), stateNames.slice(0,15), stateVals.slice(0,15), DEBIT, stateNames.slice(0,15).map(s=>stateCodesByGroup[s]||[]), drillCb);
+  renderCombinedBreakdownTable('retStateTable', 'Shipping State', stateNames, byStateSales.totals, byState.totals, stateCodesByGroup, monthsSel);
 }
 
 /* ============ AD SPEND (period-filterable) ============ */
