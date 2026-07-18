@@ -210,6 +210,17 @@ html,body{overflow-x:hidden;max-width:100%}
 </header>
 
 <div id="companyFilterBar" style="display:none;gap:8px;flex-wrap:wrap;padding:12px 24px;background:var(--surface-2);border-bottom:1px solid var(--border)"></div>
+<div id="partyFilterBar" style="display:block;padding:12px 24px;background:var(--surface-2);border-bottom:1px solid var(--border);position:relative">
+  <button class="btn btn-ghost btn-sm" onclick="togglePartyFilterPanel()">⌕ Filter by party/state <span id="partyFilterCount"></span></button>
+  <div id="partyFilterPanel" style="display:none;position:absolute;top:100%;left:24px;right:24px;max-width:480px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,0.12);z-index:50;padding:14px;margin-top:6px">
+    <input type="text" id="partyFilterSearch" placeholder="Search parties/states…" oninput="renderPartyFilterList()" style="margin-bottom:10px">
+    <div id="partyFilterList" class="ledger-search-box" style="max-height:240px"></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-ghost btn-sm" onclick="clearPartyFilter()">Clear filter (show all)</button>
+      <button class="btn btn-gold btn-sm" onclick="togglePartyFilterPanel()">Done</button>
+    </div>
+  </div>
+</div>
 
 <div class="layout">
   <aside class="sidebar">
@@ -238,7 +249,8 @@ html,body{overflow-x:hidden;max-width:100%}
       <div class="page-header"><div class="page-title">Overview</div><div class="page-sub" id="overviewPeriod">—</div></div>
       <div class="form-group" style="margin-bottom:16px"><label class="form-label">Period — pick a Financial Year, a quarter, individual months, or leave on Full Year</label><div id="fs-presets-overview" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div><div id="fs-chips-overview" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
       <div class="kpi-grid" id="kpiGrid"></div>
-      <div class="card"><div class="card-title">Sales by channel — monthly</div><div class="card-hint">Click any bar to see the transactions behind it</div><div class="chart-wrap tall" id="wrapOverviewRevenue"><canvas id="chartOverviewRevenue"></canvas></div></div>
+      <div class="card"><div class="card-title">Sales by channel — monthly</div><div class="card-hint">Click any bar to see sales vs returns</div><div class="chart-wrap tall" id="wrapOverviewRevenue"><canvas id="chartOverviewRevenue"></canvas></div></div>
+      <div class="card"><div class="card-title">Sales returns by channel — monthly</div><div class="card-hint">Click any bar to see sales vs returns</div><div class="chart-wrap tall" id="wrapOverviewReturns"><canvas id="chartOverviewReturns"></canvas></div></div>
       <div class="card"><div class="card-title">Total expenses by category</div><div class="card-hint">Click a slice to see every entry</div><div class="chart-wrap" id="wrapOverviewExpenses"><canvas id="chartOverviewExpenses"></canvas></div></div>
       <div class="card"><div class="card-title">Bank cumulative position (HDFC)</div><div class="chart-wrap" id="wrapOverviewBank"><canvas id="chartOverviewBank"></canvas></div></div>
     </div>
@@ -420,6 +432,7 @@ let DATA = null;            // {meta, companies[], ledgers[], transactions[]}
 let LEDGER_MAP = {};         // code -> {code, name, atype} — ledgers are a global shared table, not company-owned
 let COMPANIES = [];          // [{id, name, gstin, source_files, period_start, period_end}]
 let ACTIVE_COMPANIES = new Set(); // company ids currently included in every view
+let ACTIVE_PARTIES = null; // null = no restriction; else Set of party/state names to include (Overview, Sales, Returns, Ads)
 let ACTIVE_TRANSACTIONS = []; // DATA.transactions filtered to ACTIVE_COMPANIES — recompute whenever the filter changes
 function recomputeActiveTransactions(){
   ACTIVE_TRANSACTIONS = (DATA && DATA.transactions ? DATA.transactions : []).filter(t => ACTIVE_COMPANIES.has(t.company_id));
@@ -550,6 +563,45 @@ function toggleCompany(id){
   refreshEverything();
 }
 
+/* ============ PARTY / STATE FILTER (Overview, Sales, Sales Returns, Ads) ============ */
+function getAllParties(){
+  const set = new Set();
+  (DATA?.sales_register||[]).forEach(r=>set.add(r.party));
+  (DATA?.sales_returns||[]).forEach(r=>set.add(r.party));
+  return [...set].sort();
+}
+function togglePartyFilterPanel(){
+  const panel = document.getElementById('partyFilterPanel');
+  const opening = panel.style.display==='none';
+  panel.style.display = opening ? 'block' : 'none';
+  if(opening) renderPartyFilterList();
+}
+function renderPartyFilterList(){
+  const q = (document.getElementById('partyFilterSearch').value||'').trim().toUpperCase();
+  const all = getAllParties();
+  const matches = all.filter(p=>!q || p.toUpperCase().includes(q)).slice(0,80);
+  const box = document.getElementById('partyFilterList');
+  box.innerHTML = matches.map(p=>{
+    const checked = (!ACTIVE_PARTIES || ACTIVE_PARTIES.has(p)) ? 'checked' : '';
+    return `<label class="ledger-opt"><input type="checkbox" ${checked} onchange="togglePartyPresence(${JSON.stringify(p)})"><span>${p}</span></label>`;
+  }).join('') || `<div style="padding:14px;font-size:12px;color:var(--text-3)">No parties match</div>`;
+  const countEl = document.getElementById('partyFilterCount');
+  countEl.textContent = ACTIVE_PARTIES ? `(${ACTIVE_PARTIES.size} selected)` : '';
+}
+function togglePartyPresence(party){
+  const all = getAllParties();
+  if(!ACTIVE_PARTIES) ACTIVE_PARTIES = new Set(all); // start from "all selected" the first time anything is unchecked
+  if(ACTIVE_PARTIES.has(party)) ACTIVE_PARTIES.delete(party); else ACTIVE_PARTIES.add(party);
+  if(ACTIVE_PARTIES.size === all.length) ACTIVE_PARTIES = null; // back to "no restriction" if everything is checked again
+  renderPartyFilterList();
+  refreshEverything();
+}
+function clearPartyFilter(){
+  ACTIVE_PARTIES = null;
+  renderPartyFilterList();
+  refreshEverything();
+}
+
 /* ============ UI HELPERS ============ */
 function tabIdFromOnclick(el){
   const m = (el.getAttribute('onclick')||'').match(/switchTab\('([a-zA-Z]+)'\)/);
@@ -561,6 +613,8 @@ function switchTab(id){
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
   document.getElementById('tab-'+id).classList.add('active');
   if(['trialbalance','pnl','balancesheet','cashflow'].includes(id) && DATA) renderFinancialStatement(id);
+  const partyBar = document.getElementById('partyFilterBar');
+  if(partyBar) partyBar.style.display = ['overview','revenue','salesreturns','ads'].includes(id) ? 'block' : 'none';
 }
 function setMob(el){document.querySelectorAll('.mobile-nav-item').forEach(b=>b.classList.remove('active'));el.classList.add('active');}
 function toast(msg, isError){
@@ -595,7 +649,8 @@ function sumSeries(codes, months, metric, excludeOpening=true){
     if(metric==='cr') out[m]+=t.cr;
     else if(metric==='dr') out[m]+=t.dr;
     else if(metric==='count') out[m]+=1;
-    else out[m]+= (t.cr - t.dr);
+    else if(metric==='netdr') out[m]+= (t.dr - t.cr); // asset-natured (Bank, Cash): debit increases balance
+    else out[m]+= (t.cr - t.dr); // income/liability-natured: credit increases balance
   });
   return out;
 }
@@ -691,10 +746,12 @@ function aggregateByRefcode(refcodeTarget, amountSide, monthsSel, groupFn){
   const totals = {}, perMonth = {}, codesByGroup = {};
   ACTIVE_TRANSACTIONS.forEach(t=>{
     if(t.refcode !== refcodeTarget) return;
+    if(ACTIVE_PARTIES && !ACTIVE_PARTIES.has(t.code)) return;
+    const amt = amountSide==='dr' ? t.dr : t.cr;
+    if(amountSide==='dr' && amt < 0) return; // exclude negative sales entries — confirmed data-entry anomalies in the source software, not real returns (those live in the separate Sales Goods Return ledger)
     const group = groupFn ? groupFn(t.code) : '_TOTAL_';
     if(group==null) return;
     if(monthSet && !monthSet.has(t.date.slice(0,7))) return;
-    const amt = amountSide==='dr' ? t.dr : t.cr;
     totals[group] = (totals[group]||0) + amt;
     const m = t.date.slice(0,7);
     if(!perMonth[group]) perMonth[group] = {};
@@ -844,7 +901,7 @@ function stateFromParty(party){
   return p; // non-channel party (e.g. an inter-company transfer) — shown as its own row, not silently dropped
 }
 function hasReportData(){ return !!(DATA && ((DATA.sales_register&&DATA.sales_register.length) || (DATA.sales_returns&&DATA.sales_returns.length))); }
-function reportRecordsFor(kind){ return (DATA && DATA[kind] ? DATA[kind] : []).filter(r=>ACTIVE_COMPANIES.has(r.company_id)); }
+function reportRecordsFor(kind){ return (DATA && DATA[kind] ? DATA[kind] : []).filter(r=>ACTIVE_COMPANIES.has(r.company_id) && (!ACTIVE_PARTIES || ACTIVE_PARTIES.has(r.party))); }
 function reportMonthsAvailable(kind){ return [...new Set(reportRecordsFor(kind).map(r=>r.month))].filter(Boolean).sort(); }
 function reportTotal(kind, monthsSel){
   const monthSet = monthsSel && monthsSel.length ? new Set(monthsSel) : null;
@@ -1068,7 +1125,7 @@ function renderAll(){
   const expenseCodes = expenseCodesRaw.filter(c=>!adSet.has(c)); // exclude ad-spend ledgers to avoid double counting
   const vendorCodes = codesByAtype('113');
 
-  const bankSeries = sumSeries(bankCodes, months, 'net', false); // false: keep opening balances for a correct cumulative bank position
+  const bankSeries = sumSeries(bankCodes, months, 'netdr', false); // netdr: Bank is asset-natured (debit increases balance); false: keep opening balances for a correct cumulative position
   let running=0; const bankCum={};
   months.forEach(m=>{ running += bankSeries[m]; bankCum[m]=running; });
 
@@ -1255,11 +1312,13 @@ function renderOverview(monthsSel){
   const vendorCodes = codesByAtype('113');
 
   const totalRevenue = Object.values(byChannel.totals).reduce((a,b)=>a+b,0);
+  const byChannelReturns = salesReturnByChannel(monthsSel);
+  const totalReturns = Object.values(byChannelReturns.totals).reduce((a,b)=>a+b,0);
   const totalAds = adCodesFlat.length ? totalForPeriod(adCodesFlat,'dr',monthsSel) : 0;
   const totalExpenses = totalForPeriod(expenseCodes,'dr',monthsSel) - totalForPeriod(expenseCodes,'cr',monthsSel);
-  const netProfit = totalRevenue - totalExpenses - totalAds;
+  const netProfit = totalRevenue - totalReturns - totalExpenses - totalAds;
 
-  const bankSumsAll = sumSeries(bankCodes, months, 'net', false); // false: keep opening balances for a correct cumulative bank position
+  const bankSumsAll = sumSeries(bankCodes, months, 'netdr', false); // netdr: Bank is asset-natured (debit increases balance); false: keep opening balances for a correct cumulative position
   let running=0; const bankCumAll={};
   months.forEach(m=>{ running += bankSumsAll[m]; bankCumAll[m]=running; });
   const netBank = asOf ? (bankCumAll[asOf]||0) : running;
@@ -1275,9 +1334,10 @@ function renderOverview(monthsSel){
 
   document.getElementById('kpiGrid').innerHTML = `
     <div class="kpi-card"><div class="kpi-label">Total Sales</div><div class="kpi-value credit">${fmtSigned(totalRevenue)}</div><div class="kpi-note">All channels, selected period</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Returns</div><div class="kpi-value debit">${fmtSigned(totalReturns)}</div><div class="kpi-note">${totalRevenue?(totalReturns/totalRevenue*100).toFixed(1):'0'}% return rate</div></div>
     <div class="kpi-card"><div class="kpi-label">Total Expenses</div><div class="kpi-value debit">${fmtSigned(totalExpenses)}</div><div class="kpi-note">Excludes ad spend · ${totalRevenue?(totalExpenses/totalRevenue*100).toFixed(1):'0'}% of sales</div></div>
     <div class="kpi-card"><div class="kpi-label">Total Ad Spend</div><div class="kpi-value debit">${fmtSigned(totalAds)}</div><div class="kpi-note">${totalRevenue?(totalAds/totalRevenue*100).toFixed(1):'0'}% of sales</div></div>
-    <div class="kpi-card"><div class="kpi-label">Net (Profit / Loss)</div><div class="kpi-value ${netProfit>=0?'credit':'debit'}">${fmtSigned(netProfit)}</div><div class="kpi-note">Sales − expenses − ad spend</div></div>
+    <div class="kpi-card"><div class="kpi-label">Net (Profit / Loss)</div><div class="kpi-value ${netProfit>=0?'credit':'debit'}">${fmtSigned(netProfit)}</div><div class="kpi-note">Sales − returns − expenses − ad spend</div></div>
     <div class="kpi-card"><div class="kpi-label">Net Bank Position</div><div class="kpi-value ${netBank>=0?'credit':'debit'}">${fmtSigned(netBank)}</div><div class="kpi-note">HDFC, as of period end</div></div>
     <div class="kpi-card"><div class="kpi-label">Vendor Payables</div><div class="kpi-value gold">${fmtSigned(topVendorsUpTo.reduce((s,[,v])=>s+v,0))}</div><div class="kpi-note">Outstanding, top 10, as of period end</div></div>`;
 
@@ -1286,7 +1346,17 @@ function renderOverview(monthsSel){
   const chLookupOv = Object.fromEntries(chNamesOv.map(ch=>[ch, byChannel.codesByGroup[ch]||[]]));
   charts.ov1 = makeClickableBar(document.getElementById('chartOverviewRevenue'), mLabels,
     chNamesOv.map((ch,i)=>({label:ch,data:periodMonths.map(m=>(byChannelMonthly.perMonth[ch]||{})[m]||0),backgroundColor:PALETTE[i%PALETTE.length],borderRadius:3})),
-    periodMonths, chLookupOv, {scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,ticks:{callback:v=>'₹'+fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}}}});
+    periodMonths, chLookupOv, {scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,ticks:{callback:v=>'₹'+fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}}}},
+    (label,codes,month)=>openSalesReturnsDrill(label,codes,month?[month]:monthsSel));
+
+  destroyChart('ovRet');
+  const byChannelReturnsMonthly = salesReturnByChannel(null);
+  const retNamesOv = Object.keys(byChannelReturns.totals);
+  const retLookupOv = Object.fromEntries(retNamesOv.map(ch=>[ch, byChannelReturns.codesByGroup[ch]||[]]));
+  charts.ovRet = makeClickableBar(document.getElementById('chartOverviewReturns'), mLabels,
+    retNamesOv.map((ch,i)=>({label:ch,data:periodMonths.map(m=>(byChannelReturnsMonthly.perMonth[ch]||{})[m]||0),backgroundColor:PALETTE[i%PALETTE.length],borderRadius:3})),
+    periodMonths, retLookupOv, {scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,ticks:{callback:v=>'₹'+fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}}}},
+    (label,codes,month)=>openSalesReturnsDrill(label,codes,month?[month]:monthsSel));
 
   const expByLedgerPeriod = {};
   const expSet = new Set(expenseCodes);
@@ -1473,7 +1543,9 @@ function aggregateByRefcodeUpTo(refcodeTarget, amountSide, asOfMonth){
   ACTIVE_TRANSACTIONS.forEach(t=>{
     if(t.refcode !== refcodeTarget) return;
     if(asOfMonth && t.date.slice(0,7) > asOfMonth) return;
-    total += (amountSide==='dr' ? t.dr : t.cr);
+    const amt = amountSide==='dr' ? t.dr : t.cr;
+    if(amountSide==='dr' && amt < 0) return; // exclude negative sales entries — see aggregateByRefcode
+    total += amt;
   });
   return total;
 }
