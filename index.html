@@ -214,6 +214,10 @@ html,body{overflow-x:hidden;max-width:100%}
   <button class="btn btn-ghost btn-sm" onclick="togglePartyFilterPanel()">⌕ Filter by party/state <span id="partyFilterCount"></span></button>
   <div id="partyFilterPanel" style="display:none;position:absolute;top:100%;left:24px;right:24px;max-width:480px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,0.12);z-index:50;padding:14px;margin-top:6px">
     <input type="text" id="partyFilterSearch" placeholder="Search parties/states…" oninput="renderPartyFilterList()" style="margin-bottom:10px">
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <button class="btn btn-ghost btn-sm" onclick="selectAllParties()">Select all</button>
+      <button class="btn btn-ghost btn-sm" onclick="selectNoParties()">Select none</button>
+    </div>
     <div id="partyFilterList" class="ledger-search-box" style="max-height:240px"></div>
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="btn btn-ghost btn-sm" onclick="clearPartyFilter()">Clear filter (show all)</button>
@@ -579,7 +583,7 @@ function togglePartyFilterPanel(){
 function renderPartyFilterList(){
   const q = (document.getElementById('partyFilterSearch').value||'').trim().toUpperCase();
   const all = getAllParties();
-  const matches = all.filter(p=>!q || p.toUpperCase().includes(q)).slice(0,80);
+  const matches = all.filter(p=>!q || p.toUpperCase().includes(q)).slice(0,200);
   const box = document.getElementById('partyFilterList');
   box.innerHTML = matches.map(p=>{
     const checked = (!ACTIVE_PARTIES || ACTIVE_PARTIES.has(p)) ? 'checked' : '';
@@ -587,6 +591,16 @@ function renderPartyFilterList(){
   }).join('') || `<div style="padding:14px;font-size:12px;color:var(--text-3)">No parties match</div>`;
   const countEl = document.getElementById('partyFilterCount');
   countEl.textContent = ACTIVE_PARTIES ? `(${ACTIVE_PARTIES.size} selected)` : '';
+}
+function selectAllParties(){
+  ACTIVE_PARTIES = null;
+  renderPartyFilterList();
+  refreshEverything();
+}
+function selectNoParties(){
+  ACTIVE_PARTIES = new Set(); // empty — nothing included until specific parties are checked back on
+  renderPartyFilterList();
+  refreshEverything();
 }
 function togglePartyPresence(party){
   const all = getAllParties();
@@ -1313,7 +1327,7 @@ function renderOverview(monthsSel){
 
   const totalRevenue = Object.values(byChannel.totals).reduce((a,b)=>a+b,0);
   const byChannelReturns = salesReturnByChannel(monthsSel);
-  const totalReturns = Object.values(byChannelReturns.totals).reduce((a,b)=>a+b,0);
+  const totalReturns = Math.abs(Object.values(byChannelReturns.totals).reduce((a,b)=>a+b,0)); // returns are stored as negative amounts — use the magnitude here
   const totalAds = adCodesFlat.length ? totalForPeriod(adCodesFlat,'dr',monthsSel) : 0;
   const totalExpenses = totalForPeriod(expenseCodes,'dr',monthsSel) - totalForPeriod(expenseCodes,'cr',monthsSel);
   const netProfit = totalRevenue - totalReturns - totalExpenses - totalAds;
