@@ -1322,15 +1322,18 @@ function renderOverview(monthsSel){
   const adCodesFlat = Object.values(ads).flat();
   const adSet = new Set(adCodesFlat);
   const expenseCodesRaw = [...new Set([...codesByAtype('4'), ...codesByAtype('10'), ...codesByAtype('8'), ...codesByAtype('3')])];
-  const expenseCodes = expenseCodesRaw.filter(c=>!adSet.has(c)); // exclude ad spend — shown as its own KPI, not folded into "expenses"
+  const purchaseCodes = expenseCodesRaw.filter(c=>(LEDGER_MAP[c]?.name||'').toUpperCase().includes('PURCHASE')); // goods bought — a different category from operating expenses (COGS, not opex)
+  const purchaseSet = new Set(purchaseCodes);
+  const expenseCodes = expenseCodesRaw.filter(c=>!adSet.has(c) && !purchaseSet.has(c)); // exclude ad spend and goods purchases — each shown as its own KPI, not folded into "expenses"
   const vendorCodes = codesByAtype('113');
 
   const totalRevenue = Object.values(byChannel.totals).reduce((a,b)=>a+b,0);
   const byChannelReturns = salesReturnByChannel(monthsSel);
   const totalReturns = Math.abs(Object.values(byChannelReturns.totals).reduce((a,b)=>a+b,0)); // returns are stored as negative amounts — use the magnitude here
   const totalAds = adCodesFlat.length ? totalForPeriod(adCodesFlat,'dr',monthsSel) : 0;
+  const totalPurchases = totalForPeriod(purchaseCodes,'dr',monthsSel) - totalForPeriod(purchaseCodes,'cr',monthsSel);
   const totalExpenses = totalForPeriod(expenseCodes,'dr',monthsSel) - totalForPeriod(expenseCodes,'cr',monthsSel);
-  const netProfit = totalRevenue - totalReturns - totalExpenses - totalAds;
+  const netProfit = totalRevenue - totalReturns - totalPurchases - totalExpenses - totalAds;
 
   const bankSumsAll = sumSeries(bankCodes, months, 'netdr', false); // netdr: Bank is asset-natured (debit increases balance); false: keep opening balances for a correct cumulative position
   let running=0; const bankCumAll={};
@@ -1349,9 +1352,10 @@ function renderOverview(monthsSel){
   document.getElementById('kpiGrid').innerHTML = `
     <div class="kpi-card"><div class="kpi-label">Total Sales</div><div class="kpi-value credit">${fmtSigned(totalRevenue)}</div><div class="kpi-note">All channels, selected period</div></div>
     <div class="kpi-card"><div class="kpi-label">Total Returns</div><div class="kpi-value debit">${fmtSigned(totalReturns)}</div><div class="kpi-note">${totalRevenue?(totalReturns/totalRevenue*100).toFixed(1):'0'}% return rate</div></div>
-    <div class="kpi-card"><div class="kpi-label">Total Expenses</div><div class="kpi-value debit">${fmtSigned(totalExpenses)}</div><div class="kpi-note">Excludes ad spend · ${totalRevenue?(totalExpenses/totalRevenue*100).toFixed(1):'0'}% of sales</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Purchases</div><div class="kpi-value debit">${fmtSigned(totalPurchases)}</div><div class="kpi-note">Goods bought (COGS) · ${totalRevenue?(totalPurchases/totalRevenue*100).toFixed(1):'0'}% of sales</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Expenses</div><div class="kpi-value debit">${fmtSigned(totalExpenses)}</div><div class="kpi-note">Operating costs only · ${totalRevenue?(totalExpenses/totalRevenue*100).toFixed(1):'0'}% of sales</div></div>
     <div class="kpi-card"><div class="kpi-label">Total Ad Spend</div><div class="kpi-value debit">${fmtSigned(totalAds)}</div><div class="kpi-note">${totalRevenue?(totalAds/totalRevenue*100).toFixed(1):'0'}% of sales</div></div>
-    <div class="kpi-card"><div class="kpi-label">Net (Profit / Loss)</div><div class="kpi-value ${netProfit>=0?'credit':'debit'}">${fmtSigned(netProfit)}</div><div class="kpi-note">Sales − returns − expenses − ad spend</div></div>
+    <div class="kpi-card"><div class="kpi-label">Net (Profit / Loss)</div><div class="kpi-value ${netProfit>=0?'credit':'debit'}">${fmtSigned(netProfit)}</div><div class="kpi-note">Sales − returns − purchases − expenses − ad spend</div></div>
     <div class="kpi-card"><div class="kpi-label">Net Bank Position</div><div class="kpi-value ${netBank>=0?'credit':'debit'}">${fmtSigned(netBank)}</div><div class="kpi-note">HDFC, as of period end</div></div>
     <div class="kpi-card"><div class="kpi-label">Vendor Payables</div><div class="kpi-value gold">${fmtSigned(topVendorsUpTo.reduce((s,[,v])=>s+v,0))}</div><div class="kpi-note">Outstanding, top 10, as of period end</div></div>`;
 
