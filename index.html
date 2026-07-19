@@ -255,7 +255,8 @@ html,body{overflow-x:hidden;max-width:100%}
       <div class="kpi-grid" id="kpiGrid"></div>
       <div class="card"><div class="card-title">Sales by channel — monthly</div><div class="card-hint">Click any bar to see sales vs returns</div><div class="chart-wrap tall" id="wrapOverviewRevenue"><canvas id="chartOverviewRevenue"></canvas></div></div>
       <div class="card"><div class="card-title">Sales returns by channel — monthly</div><div class="card-hint">Click any bar to see sales vs returns</div><div class="chart-wrap tall" id="wrapOverviewReturns"><canvas id="chartOverviewReturns"></canvas></div></div>
-      <div class="card"><div class="card-title">Total expenses by category</div><div class="card-hint">Click a slice to see every entry</div><div class="chart-wrap" id="wrapOverviewExpenses"><canvas id="chartOverviewExpenses"></canvas></div></div>
+      <div class="card"><div class="card-title">Total purchases by category</div><div class="card-hint">Goods bought (COGS) — click a slice to see every entry</div><div class="chart-wrap" id="wrapOverviewPurchases"><canvas id="chartOverviewPurchases"></canvas></div></div>
+      <div class="card"><div class="card-title">Total expenses by category</div><div class="card-hint">Click a bar to see the vendor breakdown</div><div class="chart-wrap tall" id="wrapOverviewExpenses"><canvas id="chartOverviewExpenses"></canvas></div></div>
       <div class="card"><div class="card-title">Bank cumulative position (HDFC)</div><div class="chart-wrap" id="wrapOverviewBank"><canvas id="chartOverviewBank"></canvas></div></div>
     </div>
 
@@ -1049,18 +1050,22 @@ function openExpenseVendorDrill(code, categoryName){
     const vendor = t.refcode || '(No counter-party recorded)';
     byVendor[vendor] = (byVendor[vendor]||0) + (t.dr - t.cr);
   });
-  const vendors = Object.entries(byVendor).sort((a,b)=>b[1]-a[1]);
+  const vendors = Object.entries(byVendor).sort((a,b)=>b[1]-a[1]).slice(0,25);
   const total = vendors.reduce((s,[,v])=>s+v,0);
   document.getElementById('drillTitle').textContent = categoryName;
-  document.getElementById('drillSub').textContent = `By vendor · ${vendors.length} vendor${vendors.length!==1?'s':''}`;
+  document.getElementById('drillSub').textContent = `By vendor · ${vendors.length} vendor${vendors.length!==1?'s':''} · click a bar for its transactions`;
   document.getElementById('drillBody').innerHTML = vendors.length
-    ? `<div style="max-height:360px;overflow-y:auto"><table class="ldg-table"><thead><tr><th>Vendor</th><th class="num">Amount</th></tr></thead><tbody>
-        ${vendors.map(([v,amt])=>`<tr style="cursor:pointer" onclick='openDrillByVendor(${JSON.stringify(code)},${JSON.stringify(v)},${JSON.stringify(categoryName)})'><td>${v}</td><td class="num debit">${fmt(amt)}</td></tr>`).join('')}
-      </tbody></table></div>`
+    ? `<div class="chart-wrap tall" style="height:${Math.max(240, vendors.length*32)}px"><canvas id="drillVendorChart"></canvas></div>`
     : `<div class="empty-state"><div class="glyph">§</div><p>No transactions in this category</p></div>`;
   document.getElementById('drillTotal').innerHTML = vendors.length
     ? `<span>Total</span><span style="color:var(--debit)">${fmt(total)}</span>` : '';
   document.getElementById('drillModal').classList.add('open');
+  if(vendors.length){
+    destroyChart('drillVendorChart');
+    charts.drillVendorChart = makeHBar(document.getElementById('drillVendorChart'),
+      vendors.map(([v])=>v), vendors.map(([,v])=>v), DEBIT, vendors.map(([v])=>[v]),
+      (vendorName) => openDrillByVendor(code, vendorName, categoryName));
+  }
 }
 function openDrillByVendor(code, vendor, categoryName){
   const txs = ACTIVE_TRANSACTIONS.filter(t=>t.code===code && (t.refcode||'(No counter-party recorded)')===vendor).sort((a,b)=>b.date.localeCompare(a.date));
@@ -1322,9 +1327,18 @@ function renderOverview(monthsSel){
   const adCodesFlat = Object.values(ads).flat();
   const adSet = new Set(adCodesFlat);
   const expenseCodesRaw = [...new Set([...codesByAtype('4'), ...codesByAtype('10'), ...codesByAtype('8'), ...codesByAtype('3')])];
-  const purchaseCodes = expenseCodesRaw.filter(c=>(LEDGER_MAP[c]?.name||'').toUpperCase().includes('PURCHASE')); // goods bought — a different category from operating expenses (COGS, not opex)
+  // Genuine goods purchases only. Excludes "PURCHASE (SERVICES)" (this is where ad-platform
+  // and logistics vendor payments get tagged for GST input-service purposes — already
+  // counted as Ad Spend/Expenses via their own named ledgers, so including this here would
+  // double-count them), "PURCHASE (CAPTIAL GOODS/ASSETS)" (a fixed-asset addition, not COGS),
+  // and "INTEREST A/C PURCHASE" (a finance charge). Confirmed against a real per-transaction-type
+  // Purchases Register export.
+  const PURCHASE_GOODS_NAMES = new Set(['FINISH PURCHASE A/C','FINISH PURCHASE RETURN A/C','GREY PURCHASE A/C','PURCHASE A/C','PURCHASE (GENERAL GOODS)','PURCHASE RETURNS A/C','DISCOUNT A/C PURCHASE']);
+  const purchaseCodes = expenseCodesRaw.filter(c=>PURCHASE_GOODS_NAMES.has((LEDGER_MAP[c]?.name||'').trim()));
   const purchaseSet = new Set(purchaseCodes);
-  const expenseCodes = expenseCodesRaw.filter(c=>!adSet.has(c) && !purchaseSet.has(c)); // exclude ad spend and goods purchases — each shown as its own KPI, not folded into "expenses"
+  const CONFOUNDED_NAMES = new Set(['PURCHASE (SERVICES)','PURCHASE (CAPTIAL GOODS/ASSETS)','INTEREST A/C PURCHASE']);
+  const confoundedSet = new Set(expenseCodesRaw.filter(c=>CONFOUNDED_NAMES.has((LEDGER_MAP[c]?.name||'').trim())));
+  const expenseCodes = expenseCodesRaw.filter(c=>!adSet.has(c) && !purchaseSet.has(c) && !confoundedSet.has(c)); // exclude ad spend, goods purchases, and the confounded services/capital-goods/interest ledgers (unclear if already counted elsewhere — excluded rather than risk double-counting)
   const vendorCodes = codesByAtype('113');
 
   const totalRevenue = Object.values(byChannel.totals).reduce((a,b)=>a+b,0);
@@ -1333,7 +1347,7 @@ function renderOverview(monthsSel){
   const totalAds = adCodesFlat.length ? totalForPeriod(adCodesFlat,'dr',monthsSel) : 0;
   const totalPurchases = totalForPeriod(purchaseCodes,'dr',monthsSel) - totalForPeriod(purchaseCodes,'cr',monthsSel);
   const totalExpenses = totalForPeriod(expenseCodes,'dr',monthsSel) - totalForPeriod(expenseCodes,'cr',monthsSel);
-  const netProfit = totalRevenue - totalReturns - totalPurchases - totalExpenses - totalAds;
+  const netProfit = totalRevenue - totalReturns - totalExpenses - totalAds; // Purchases intentionally excluded — without opening/closing stock data, raw goods purchased isn't the same as cost of goods sold, and subtracting it directly would misstate profit
 
   const bankSumsAll = sumSeries(bankCodes, months, 'netdr', false); // netdr: Bank is asset-natured (debit increases balance); false: keep opening balances for a correct cumulative position
   let running=0; const bankCumAll={};
@@ -1352,10 +1366,10 @@ function renderOverview(monthsSel){
   document.getElementById('kpiGrid').innerHTML = `
     <div class="kpi-card"><div class="kpi-label">Total Sales</div><div class="kpi-value credit">${fmtSigned(totalRevenue)}</div><div class="kpi-note">All channels, selected period</div></div>
     <div class="kpi-card"><div class="kpi-label">Total Returns</div><div class="kpi-value debit">${fmtSigned(totalReturns)}</div><div class="kpi-note">${totalRevenue?(totalReturns/totalRevenue*100).toFixed(1):'0'}% return rate</div></div>
-    <div class="kpi-card"><div class="kpi-label">Total Purchases</div><div class="kpi-value debit">${fmtSigned(totalPurchases)}</div><div class="kpi-note">Goods bought (COGS) · ${totalRevenue?(totalPurchases/totalRevenue*100).toFixed(1):'0'}% of sales</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Purchases</div><div class="kpi-value debit">${fmtSigned(totalPurchases)}</div><div class="kpi-note">Goods bought, informational only — not in Net Profit below</div></div>
     <div class="kpi-card"><div class="kpi-label">Total Expenses</div><div class="kpi-value debit">${fmtSigned(totalExpenses)}</div><div class="kpi-note">Operating costs only · ${totalRevenue?(totalExpenses/totalRevenue*100).toFixed(1):'0'}% of sales</div></div>
     <div class="kpi-card"><div class="kpi-label">Total Ad Spend</div><div class="kpi-value debit">${fmtSigned(totalAds)}</div><div class="kpi-note">${totalRevenue?(totalAds/totalRevenue*100).toFixed(1):'0'}% of sales</div></div>
-    <div class="kpi-card"><div class="kpi-label">Net (Profit / Loss)</div><div class="kpi-value ${netProfit>=0?'credit':'debit'}">${fmtSigned(netProfit)}</div><div class="kpi-note">Sales − returns − purchases − expenses − ad spend</div></div>
+    <div class="kpi-card"><div class="kpi-label">Net (Profit / Loss)</div><div class="kpi-value ${netProfit>=0?'credit':'debit'}">${fmtSigned(netProfit)}</div><div class="kpi-note">Sales − returns − expenses − ad spend (excludes purchases)</div></div>
     <div class="kpi-card"><div class="kpi-label">Net Bank Position</div><div class="kpi-value ${netBank>=0?'credit':'debit'}">${fmtSigned(netBank)}</div><div class="kpi-note">HDFC, as of period end</div></div>
     <div class="kpi-card"><div class="kpi-label">Vendor Payables</div><div class="kpi-value gold">${fmtSigned(topVendorsUpTo.reduce((s,[,v])=>s+v,0))}</div><div class="kpi-note">Outstanding, top 10, as of period end</div></div>`;
 
@@ -1388,7 +1402,22 @@ function renderOverview(monthsSel){
   const expEntries = Object.entries(expByLedgerPeriod).filter(([,v])=>v>0.5).sort((a,b)=>b[1]-a[1]).slice(0,10);
   destroyChart('ovExp');
   if(expEntries.length){
-    charts.ovExp = makeDoughnut(document.getElementById('chartOverviewExpenses'), expEntries.map(([c])=>ledgerDisplayName(c)), expEntries.map(([,v])=>v), expEntries.map(([c])=>[c]));
+    charts.ovExp = makeHBar(document.getElementById('chartOverviewExpenses'), expEntries.map(([c])=>ledgerDisplayName(c)), expEntries.map(([,v])=>v), DEBIT, expEntries.map(([c])=>[c]),
+      (label,codes) => openExpenseVendorDrill(codes[0], label));
+  }
+
+  const purByLedgerPeriod = {};
+  const purSet = new Set(purchaseCodes);
+  ACTIVE_TRANSACTIONS.forEach(t=>{
+    if(!purSet.has(t.code)) return;
+    if(t.type===OPENING_BALANCE_TYPE) return;
+    if(monthSetForExp && !monthSetForExp.has(t.date.slice(0,7))) return;
+    purByLedgerPeriod[t.code] = (purByLedgerPeriod[t.code]||0) + (t.dr - t.cr);
+  });
+  const purEntries = Object.entries(purByLedgerPeriod).filter(([,v])=>v>0.5).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  destroyChart('ovPur');
+  if(purEntries.length){
+    charts.ovPur = makeDoughnut(document.getElementById('chartOverviewPurchases'), purEntries.map(([c])=>ledgerDisplayName(c)), purEntries.map(([,v])=>v), purEntries.map(([c])=>[c]));
   }
 
   destroyChart('ov2');
