@@ -1184,6 +1184,32 @@ function openExpenseVendorDrill(code, categoryName){
       (vendorName) => openDrillByVendor(code, vendorName, categoryName));
   }
 }
+/* Purchases vendor breakdown: code and refcode are swapped relative to
+   Expenses here — for a real purchase bill, `refcode` is the purchase
+   category (e.g. "FINISH PURCHASE A/C") and `code` is the actual vendor.
+   Includes the same verified /1.05 GST correction as the KPI total. */
+function openPurchaseVendorDrill(categoryRefcode, monthsSel){
+  const monthSet = monthsSel && monthsSel.length ? new Set(monthsSel) : null;
+  const txs = ACTIVE_TRANSACTIONS.filter(t=>t.refcode===categoryRefcode && !isBalanceMarker(t) && (!monthSet || monthSet.has(t.date.slice(0,7))));
+  const byVendor = {};
+  txs.forEach(t=>{ byVendor[t.code] = (byVendor[t.code]||0) + (t.cr - t.dr)/GST_MULTIPLIER; });
+  const vendors = Object.entries(byVendor).sort((a,b)=>b[1]-a[1]).slice(0,25);
+  const total = vendors.reduce((s,[,v])=>s+v,0);
+  document.getElementById('drillTitle').textContent = categoryRefcode;
+  document.getElementById('drillSub').textContent = `By vendor · ${vendors.length} vendor${vendors.length!==1?'s':''} · click a bar for its transactions`;
+  document.getElementById('drillBody').innerHTML = vendors.length
+    ? `<div class="chart-wrap tall" style="height:${Math.max(240, vendors.length*32)}px"><canvas id="drillVendorChart"></canvas></div>`
+    : `<div class="empty-state"><div class="glyph">§</div><p>No transactions in this category</p></div>`;
+  document.getElementById('drillTotal').innerHTML = vendors.length
+    ? `<span>Total</span><span style="color:var(--debit)">${fmt(total)}</span>` : '';
+  document.getElementById('drillModal').classList.add('open');
+  if(vendors.length){
+    destroyChart('drillVendorChart');
+    charts.drillVendorChart = makeHBar(document.getElementById('drillVendorChart'),
+      vendors.map(([v])=>v), vendors.map(([,v])=>v), DEBIT, vendors.map(([v])=>[v]),
+      (vendorName) => openDrillByVendor(vendorName, categoryRefcode, categoryRefcode));
+  }
+}
 function openDrillByVendor(code, vendor, categoryName){
   const txs = ACTIVE_TRANSACTIONS.filter(t=>t.code===code && (t.refcode||'(No counter-party recorded)')===vendor).sort((a,b)=>b.date.localeCompare(a.date));
   let total = 0;
@@ -1535,18 +1561,18 @@ function renderOverview(monthsSel){
       (label,codes) => openExpenseVendorDrill(codes[0], label));
   }
 
-  const purByLedgerPeriod = {};
-  const purSet = new Set(purchaseCodes);
+  const purByCategoryPeriod = {};
   ACTIVE_TRANSACTIONS.forEach(t=>{
-    if(!purSet.has(t.code)) return;
+    if(!PURCHASE_GOODS_NAMES.has(t.refcode)) return;
     if(isBalanceMarker(t)) return;
     if(monthSetForExp && !monthSetForExp.has(t.date.slice(0,7))) return;
-    purByLedgerPeriod[t.code] = (purByLedgerPeriod[t.code]||0) + (t.dr - t.cr);
+    purByCategoryPeriod[t.refcode] = (purByCategoryPeriod[t.refcode]||0) + (t.cr - t.dr);
   });
-  const purEntries = Object.entries(purByLedgerPeriod).filter(([,v])=>v>0.5).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const purEntries = Object.entries(purByCategoryPeriod).map(([cat,v])=>[cat, v/GST_MULTIPLIER]).filter(([,v])=>v>0.5).sort((a,b)=>b[1]-a[1]).slice(0,10);
   destroyChart('ovPur');
   if(purEntries.length){
-    charts.ovPur = makeDoughnut(document.getElementById('chartOverviewPurchases'), purEntries.map(([c])=>ledgerDisplayName(c)), purEntries.map(([,v])=>v), purEntries.map(([c])=>[c]));
+    charts.ovPur = makeHBar(document.getElementById('chartOverviewPurchases'), purEntries.map(([c])=>c), purEntries.map(([,v])=>v), DEBIT, purEntries.map(([c])=>[c]),
+      (label) => openPurchaseVendorDrill(label, monthsSel));
   }
 
   destroyChart('ov2');
