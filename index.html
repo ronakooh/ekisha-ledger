@@ -488,7 +488,8 @@ function showLoading(msg){
 function hideLoading(){ document.getElementById('loadingOverlay').style.display = 'none'; }
 
 async function apiCall(path, method='GET'){
-  const res = await fetch(SERVICE_URL + path, { method, headers: authHeaders() });
+  const bustParam = path.includes('?') ? '&_t=' : '?_t=';
+  const res = await fetch(SERVICE_URL + path + bustParam + Date.now(), { method, headers: authHeaders(), cache: 'no-store' });
   const contentType = res.headers.get('content-type') || '';
   if(!contentType.includes('application/json')){
     throw new Error('Backend returned a non-JSON response (HTTP ' + res.status + '). This usually means Cloud Run\'s own access gate rejected the request before it reached the app — check that your Google account has the Cloud Run Invoker role on this service.');
