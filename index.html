@@ -296,7 +296,8 @@ html,body{overflow-x:hidden;max-width:100%}
     </div>
 
     <div id="tab-expenses" class="section">
-      <div class="page-header"><div class="page-title">Expenses</div><div class="page-sub">Top expense categories, across all data</div></div>
+      <div class="page-header"><div class="page-title">Expenses</div><div class="page-sub" id="expensesPeriod">—</div></div>
+      <div class="form-group" style="margin-bottom:16px"><label class="form-label">Period — pick a Financial Year, a quarter, individual months, or leave on Full Year</label><div id="fs-presets-expenses" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div><div id="fs-chips-expenses" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
       <div class="card"><div class="card-title">Top expense categories</div><div class="card-hint">Click a bar to see the vendor breakdown</div><div class="chart-wrap tall" id="wrapExpTop"><canvas id="chartExpTop"></canvas></div></div>
       <div class="card"><div class="card-title">Monthly trend — top 4 categories</div><div class="chart-wrap" id="wrapExpTrend"><canvas id="chartExpTrend"></canvas></div></div>
     </div>
@@ -1254,35 +1255,15 @@ function renderAll(){
   const months = monthsInData();
   const mLabels = months.map(monthLabel);
   const bankCodes = codesByNameContains('HDFC BANK');
-  const adCodesFlat = Object.values(getAdDefs()).flat();
-  const expenseCodesRaw = codesByAtype('4');
-  const adSet = new Set(adCodesFlat);
-  const expenseCodes = expenseCodesRaw.filter(c=>!adSet.has(c)); // exclude ad-spend ledgers to avoid double counting
   const vendorCodes = codesByAtype('113');
 
   const bankSeries = sumSeries(bankCodes, months, 'netdr', false); // netdr: Bank is asset-natured (debit increases balance); false: keep opening balances for a correct cumulative position
   let running=0; const bankCum={};
   months.forEach(m=>{ running += bankSeries[m]; bankCum[m]=running; });
 
-  const expByLedger = {};
-  ACTIVE_TRANSACTIONS.forEach(t=>{ if(isBalanceMarker(t)) return; if(new Set(expenseCodes).has(t.code)){ expByLedger[t.code]=(expByLedger[t.code]||0)+(t.dr-t.cr); } });
-  const topExpNames = Object.entries(expByLedger).sort((a,b)=>b[1]-a[1]).filter(([,v])=>v>0).slice(0,8).map(([c])=>c);
-
   const vendorBal = {};
   ACTIVE_TRANSACTIONS.forEach(t=>{ if(new Set(vendorCodes).has(t.code)){ vendorBal[t.code]=(vendorBal[t.code]||0)+(t.cr-t.dr); } });
   const topVendors = Object.entries(vendorBal).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1])).filter(([,v])=>Math.abs(v)>1).slice(0,10);
-
-  const expNames = topExpNames.map(c=>ledgerDisplayName(c));
-  const expVals = topExpNames.map(c=>expByLedger[c]);
-  destroyChart('exp1');
-  charts.exp1 = makeHBar(document.getElementById('chartExpTop'), expNames, expVals, DEBIT, topExpNames.map(c=>[c]),
-    (label, codes) => openExpenseVendorDrill(codes[0], label));
-  const top4 = topExpNames.slice(0,4);
-  destroyChart('exp2');
-  const expLookup={}; top4.forEach(c=>expLookup[ledgerDisplayName(c)]=[c]);
-  charts.exp2 = makeClickableLine(document.getElementById('chartExpTrend'), mLabels,
-    top4.map((c,i)=>({label:ledgerDisplayName(c),data:months.map(m=>sumSeries([c],[m],'net')[m]||0),borderColor:PALETTE[i%PALETTE.length],backgroundColor:'transparent',tension:0.3})),
-    months, expLookup);
 
   const vNames = topVendors.map(([c])=>ledgerDisplayName(c));
   const vVals = topVendors.map(([,v])=>v);
@@ -1301,6 +1282,45 @@ function renderAll(){
   charts.bnk2 = makeClickableLine(document.getElementById('chartBankCum'), mLabels,
     [{label:'Cumulative',data:months.map(m=>bankCum[m]||0),borderColor:GOLD,backgroundColor:'rgba(156,122,46,0.10)',fill:true,tension:0.3}],
     months, {'Cumulative':bankCodes});
+}
+
+/* ============ EXPENSES (period-filterable) ============ */
+function renderExpensesPage(monthsSel){
+  if(!DATA) return;
+  const months = monthsInData();
+  const periodMonths = monthsSel && monthsSel.length ? [...monthsSel].sort() : months;
+  const mLabels = periodMonths.map(monthLabel);
+  const monthSet = monthsSel && monthsSel.length ? new Set(monthsSel) : null;
+
+  document.getElementById('expensesPeriod').textContent = monthsSel && monthsSel.length
+    ? (periodMonths.length===1 ? monthLabel(periodMonths[0]) : `${monthLabel(periodMonths[0])} – ${monthLabel(periodMonths[periodMonths.length-1])}`)
+    : `${monthLabel(months[0])} – ${monthLabel(months[months.length-1])}`;
+
+  const adCodesFlat = Object.values(getAdDefs()).flat();
+  const adSet = new Set(adCodesFlat);
+  const expenseCodesRaw = codesByAtype('4');
+  const expenseCodes = expenseCodesRaw.filter(c=>!adSet.has(c)); // exclude ad-spend ledgers to avoid double counting
+
+  const expByLedger = {};
+  ACTIVE_TRANSACTIONS.forEach(t=>{
+    if(isBalanceMarker(t)) return;
+    if(!new Set(expenseCodes).has(t.code)) return;
+    if(monthSet && !monthSet.has(t.date.slice(0,7))) return;
+    expByLedger[t.code] = (expByLedger[t.code]||0) + (t.dr-t.cr);
+  });
+  const topExpNames = Object.entries(expByLedger).sort((a,b)=>b[1]-a[1]).filter(([,v])=>v>0).slice(0,8).map(([c])=>c);
+
+  const expNames = topExpNames.map(c=>ledgerDisplayName(c));
+  const expVals = topExpNames.map(c=>expByLedger[c]);
+  destroyChart('exp1');
+  charts.exp1 = makeHBar(document.getElementById('chartExpTop'), expNames, expVals, DEBIT, topExpNames.map(c=>[c]),
+    (label, codes) => openExpenseVendorDrill(codes[0], label));
+  const top4 = topExpNames.slice(0,4);
+  destroyChart('exp2');
+  const expLookup={}; top4.forEach(c=>expLookup[ledgerDisplayName(c)]=[c]);
+  charts.exp2 = makeClickableLine(document.getElementById('chartExpTrend'), mLabels,
+    top4.map((c,i)=>({label:ledgerDisplayName(c),data:periodMonths.map(m=>sumSeries([c],[m],'net')[m]||0),borderColor:PALETTE[i%PALETTE.length],backgroundColor:'transparent',tension:0.3})),
+    periodMonths, expLookup);
 }
 
 /* ============ SALES (period-filterable) ============ */
@@ -1718,8 +1738,8 @@ function computeNetProfitUpTo(asOfMonth){
   const totalInc = salesAmt - salesReturnAmt + otherInc;
   return totalInc - totalD - totalI;
 }
-const FIN_KINDS = ['overview','revenue','salesreturns','ads','gst','trialbalance','pnl','balancesheet','cashflow'];
-const finMultiSelection = { overview:null, revenue:null, salesreturns:null, ads:null, gst:null, trialbalance:null, pnl:null, balancesheet:null, cashflow:null }; // null = Full Year, else Set of 'YYYY-MM'
+const FIN_KINDS = ['overview','revenue','salesreturns','ads','gst','expenses','trialbalance','pnl','balancesheet','cashflow'];
+const finMultiSelection = { overview:null, revenue:null, salesreturns:null, ads:null, gst:null, expenses:null, trialbalance:null, pnl:null, balancesheet:null, cashflow:null }; // null = Full Year, else Set of 'YYYY-MM'
 
 function renderPeriodChips(kind){
   const months = monthsInData();
@@ -1764,6 +1784,7 @@ function renderFinancialStatement(kind){
   else if(kind==='salesreturns') renderSalesReturnsPage(selectedMonthsArr('salesreturns'));
   else if(kind==='ads') renderAdsPage(selectedMonthsArr('ads'));
   else if(kind==='gst') renderGstPage(selectedMonthsArr('gst'));
+  else if(kind==='expenses') renderExpensesPage(selectedMonthsArr('expenses'));
   else if(kind==='trialbalance'){ const m=selectedMonthsArr('trialbalance'); renderTrialBalance(m && m.length ? m[m.length-1] : null); }
   else if(kind==='balancesheet'){ const m=selectedMonthsArr('balancesheet'); renderBalanceSheet(m && m.length ? m[m.length-1] : null); }
   else if(kind==='pnl') renderPnL(selectedMonthsArr('pnl'));
