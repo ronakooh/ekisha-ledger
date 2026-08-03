@@ -137,6 +137,12 @@ select:focus,input[type=text]:focus{border-color:var(--gold)}
 .report-card-title{font-family:var(--serif);font-size:15px;font-weight:600}
 .report-card-meta{font-size:10.5px;color:var(--text-3);margin-top:2px}
 .divider{height:1px;background:var(--border);margin:18px 0}
+.status-pill{display:inline-block;padding:3px 9px;border-radius:99px;font-size:10.5px;font-weight:600;white-space:nowrap}
+.status-pill.credit{background:var(--credit-dim);color:var(--credit)}
+.status-pill.debit{background:var(--debit-dim);color:var(--debit)}
+.status-pill.gold{background:var(--gold-dim);color:var(--gold)}
+.status-pill.neutral{background:var(--surface-3);color:var(--text-2)}
+.status-filter-bar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
 
 /* ── MODAL (drill-down) ── */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(28,26,23,0.4);z-index:1000;align-items:flex-start;justify-content:center;padding:60px 20px;overflow-y:auto}
@@ -242,6 +248,11 @@ html,body{overflow-x:hidden;max-width:100%}
     <button class="nav-item" onclick="switchTab('pnl')"><span class="nav-dot"></span>Profit &amp; Loss</button>
     <button class="nav-item" onclick="switchTab('balancesheet')"><span class="nav-dot"></span>Balance Sheet</button>
     <button class="nav-item" onclick="switchTab('cashflow')"><span class="nav-dot"></span>Cash Flow</button>
+    <span class="nav-label">Reconciliation</span>
+    <button class="nav-item" onclick="switchTab('reconwebsite')"><span class="nav-dot"></span>Website</button>
+    <button class="nav-item" onclick="switchTab('reconmyntra')"><span class="nav-dot"></span>Myntra</button>
+    <button class="nav-item" onclick="switchTab('reconamazon')"><span class="nav-dot"></span>Amazon</button>
+    <button class="nav-item" onclick="switchTab('reconbank')"><span class="nav-dot"></span>Bank Statement</button>
     <span class="nav-label">Build your own</span>
     <button class="nav-item" onclick="switchTab('reports')"><span class="nav-dot"></span>Report Builder</button>
     <span class="nav-label">System</span>
@@ -339,6 +350,30 @@ html,body{overflow-x:hidden;max-width:100%}
       <div class="card"><div id="cashFlowBody"></div></div>
     </div>
 
+    <div id="tab-reconwebsite" class="section">
+      <div class="page-header"><div class="page-title">Reconciliation — Website</div><div class="page-sub">Unicommerce sales/returns vs Shipway (COD) and Fastrr (Prepaid)</div></div>
+      <div class="form-group" style="margin-bottom:16px"><label class="form-label">Period — pick a Financial Year, a quarter, individual months, or leave on Full Year</label><div id="fs-presets-reconwebsite" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div><div id="fs-chips-reconwebsite" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
+      <div id="reconWebsiteBody"></div>
+    </div>
+
+    <div id="tab-reconmyntra" class="section">
+      <div class="page-header"><div class="page-title">Reconciliation — Myntra</div><div class="page-sub">Unicommerce vs Myntra's seller finance/GST report — order match, return match, payment, cost of business</div></div>
+      <div class="form-group" style="margin-bottom:16px"><label class="form-label">Period — pick a Financial Year, a quarter, individual months, or leave on Full Year</label><div id="fs-presets-reconmyntra" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div><div id="fs-chips-reconmyntra" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
+      <div id="reconMyntraBody"></div>
+    </div>
+
+    <div id="tab-reconamazon" class="section">
+      <div class="page-header"><div class="page-title">Reconciliation — Amazon</div><div class="page-sub">MTR sales+return report vs both settlement streams (XML + flat-file)</div></div>
+      <div class="form-group" style="margin-bottom:16px"><label class="form-label">Period — pick a Financial Year, a quarter, individual months, or leave on Full Year</label><div id="fs-presets-reconamazon" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div><div id="fs-chips-reconamazon" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
+      <div id="reconAmazonBody"></div>
+    </div>
+
+    <div id="tab-reconbank" class="section">
+      <div class="page-header"><div class="page-title">Reconciliation — Bank Statement</div><div class="page-sub">HDFC statement credits matched against Fastrr/Myntra/Shipway/Amazon settlements</div></div>
+      <div class="form-group" style="margin-bottom:16px"><label class="form-label">Period — pick a Financial Year, a quarter, individual months, or leave on Full Year</label><div id="fs-presets-reconbank" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div><div id="fs-chips-reconbank" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
+      <div id="reconBankBody"></div>
+    </div>
+
     <div id="tab-reports" class="section">
       <div class="page-header"><div class="page-title">Report Builder</div><div class="page-sub">Pick any ledgers, any metric, any chart — build the comparison you actually want</div></div>
       <div class="card">
@@ -377,7 +412,7 @@ html,body{overflow-x:hidden;max-width:100%}
       <div class="page-header"><div class="page-title">Settings &amp; Sync</div><div class="page-sub">Data source and security status</div></div>
       <div class="card">
         <div class="card-title">Data source</div>
-        <p style="font-size:13px;color:var(--text-2);line-height:1.6;margin-bottom:10px">"Pull latest backup" parses <strong style="color:var(--text)">every</strong> backup file sitting in the Drive folder — not just the newest — and merges them by company (matched on GSTIN, so multiple years of the same company combine into one continuous history). Last parsed <span id="sourceGenerated">—</span>.</p>
+        <p style="font-size:13px;color:var(--text-2);line-height:1.6;margin-bottom:10px">"Pull latest backup" parses <strong style="color:var(--text)">every</strong> backup file sitting in the Drive folder — not just the newest — and merges them by company (matched on GSTIN, so multiple years of the same company combine into one continuous history). It also re-parses every marketplace reconciliation file (Unicommerce/Shipway/Fastrr/Myntra/Amazon) and the HDFC bank statement PDF in the same folder, matching bank credits to each channel's settlement by reference number for the Reconciliation tabs. Last parsed <span id="sourceGenerated">—</span>.</p>
         <div id="sourceFile" style="font-family:var(--mono);font-size:11.5px;background:var(--surface-2);border-radius:8px;padding:10px 12px;line-height:1.8">—</div>
       </div>
       <div class="card">
@@ -423,6 +458,10 @@ html,body{overflow-x:hidden;max-width:100%}
     <button class="mobile-nav-item" onclick="switchTab('pnl');setMob(this)"><span class="mobile-glyph">PL</span>P&amp;L</button>
     <button class="mobile-nav-item" onclick="switchTab('balancesheet');setMob(this)"><span class="mobile-glyph">BS</span>Bal. Sheet</button>
     <button class="mobile-nav-item" onclick="switchTab('cashflow');setMob(this)"><span class="mobile-glyph">CF</span>Cash Flow</button>
+    <button class="mobile-nav-item" onclick="switchTab('reconwebsite');setMob(this)"><span class="mobile-glyph">RW</span>Recon Web</button>
+    <button class="mobile-nav-item" onclick="switchTab('reconmyntra');setMob(this)"><span class="mobile-glyph">RM</span>Recon Myn</button>
+    <button class="mobile-nav-item" onclick="switchTab('reconamazon');setMob(this)"><span class="mobile-glyph">RA</span>Recon Amz</button>
+    <button class="mobile-nav-item" onclick="switchTab('reconbank');setMob(this)"><span class="mobile-glyph">Bk</span>Bank Stmt</button>
     <button class="mobile-nav-item" onclick="switchTab('reports');setMob(this)"><span class="mobile-glyph">Rp</span>Reports</button>
     <button class="mobile-nav-item" onclick="switchTab('settings');setMob(this)"><span class="mobile-glyph">St</span>Settings</button>
   </div>
@@ -434,7 +473,7 @@ const GOOGLE_CLIENT_ID = "914256283099-d7alg61t6epkb7c7kae91d905p17rkds.apps.goo
 const SERVICE_URL = "https://ekisha-ledger-api-914256283099.asia-south1.run.app";
 
 let ID_TOKEN = null;
-let DATA = null;            // {meta, companies[], ledgers[], transactions[]}
+let DATA = null;            // {meta, companies[], ledgers[], transactions[], reconciliation{}}
 let LEDGER_MAP = {};         // code -> {code, name, atype} — ledgers are a global shared table, not company-owned
 let COMPANIES = [];          // [{id, name, gstin, source_files, period_start, period_end}]
 let ACTIVE_COMPANIES = new Set(); // company ids currently included in every view
@@ -629,7 +668,7 @@ function switchTab(id){
   document.querySelectorAll('.mobile-nav-item').forEach(n=>n.classList.toggle('active', tabIdFromOnclick(n)===id));
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
   document.getElementById('tab-'+id).classList.add('active');
-  if(['trialbalance','pnl','balancesheet','cashflow'].includes(id) && DATA) renderFinancialStatement(id);
+  if(['trialbalance','pnl','balancesheet','cashflow','reconwebsite','reconmyntra','reconamazon','reconbank'].includes(id) && DATA) renderFinancialStatement(id);
   const partyBar = document.getElementById('partyFilterBar');
   if(partyBar) partyBar.style.display = ['overview','revenue','salesreturns','ads'].includes(id) ? 'block' : 'none';
 }
@@ -647,29 +686,10 @@ function txByCodesAndMonth(codes, month){
   const monthArr = Array.isArray(month) ? month : (month ? [month] : null);
   return ACTIVE_TRANSACTIONS.filter(t => set.has(t.code) && (!monthArr || monthArr.some(m=>t.date.startsWith(m))));
 }
-/* A handful of transactions (type '00') are opening-balance / carried-forward
-   markers written when a new fiscal-year file is created — not real activity
-   for the period they're dated. Confirmed against real data: one such entry
-   nearly doubled an "April 2026 sales" figure. They must never count toward
-   flow-style metrics (sales, expenses, ad spend, GST movement) — but they
-   legitimately belong in cumulative balance-style figures (bank position,
-   vendor payables, trial balance, balance sheet), so those are left as-is.
-
-   A second, related marker also exists: a period-end "CLOSING BALANCE" entry
-   (identified by refcode, not by type — it can appear as type 'P2' or other
-   codes, not just '00'). Confirmed against real data: a single such entry on
-   "FINISH PURCHASE A/C" was 3x the real month's purchases. Both markers are
-   excluded together wherever flow-style figures are computed. */
 const OPENING_BALANCE_TYPE = '00';
 function isBalanceMarker(t){
   return t.type===OPENING_BALANCE_TYPE || t.refcode==='OPENING BALANCE' || t.refcode==='CLOSING BALANCE';
 }
-// Genuine goods purchases only. Excludes "PURCHASE (SERVICES)" (this is where ad-platform
-// and logistics vendor payments get tagged for GST input-service purposes — already
-// counted as Ad Spend/Expenses via their own named ledgers, so including this here would
-// double-count them), "PURCHASE (CAPTIAL GOODS/ASSETS)" (a fixed-asset addition, not COGS),
-// and "INTEREST A/C PURCHASE" (a finance charge). Confirmed against a real per-transaction-type
-// Purchases Register export.
 const PURCHASE_GOODS_NAMES = new Set(['FINISH PURCHASE A/C','FINISH PURCHASE RETURN A/C','GREY PURCHASE A/C','PURCHASE A/C','PURCHASE (GENERAL GOODS)','PURCHASE RETURNS A/C','DISCOUNT A/C PURCHASE']);
 
 function plRegisterRecordsFor(){ return (DATA?.pl_register||[]).filter(r=>ACTIVE_COMPANIES.has(r.company_id)); }
@@ -684,7 +704,7 @@ function monthsInRange(start, end){
   return out;
 }
 function plRegisterMatchingPeriod(monthsSel){
-  if(!monthsSel || !monthsSel.length) return null; // Full Year rarely matches a single P&L export's range — falls through to ledger reconstruction
+  if(!monthsSel || !monthsSel.length) return null;
   const records = plRegisterRecordsFor();
   if(!records.length) return null;
   const periodsSeen = new Set(records.filter(r=>r.period_start && r.period_end).map(r=>r.period_start+'|'+r.period_end));
@@ -695,17 +715,6 @@ function plRegisterMatchingPeriod(monthsSel){
   }
   return null;
 }
-/* Purchases: prefers the authoritative "Trading A/C with P&L" export (exact,
-   GST-correct) whenever its date range exactly matches the selected period;
-   otherwise falls back to matching real bills by refcode rather than by the
-   ledger's own code — matching by code directly picks up a period-end
-   "CLOSING BALANCE" summary entry that isn't a real bill (confirmed against
-   real data: it made Purchases 3x too high for a real month). The refcode
-   total already nets Finish Purchase Return against Finish Purchase (both
-   share this loop), and — verified exactly against real June data — that
-   net figure is GST-inclusive and needs dividing by 1.05 to reach the
-   taxable-value figure the real P&L reports. Combined multi-month periods
-   may not net as cleanly as a single well-settled month did in testing. */
 function totalPurchasesForPeriod(monthsSel){
   const match = plRegisterMatchingPeriod(monthsSel);
   if(match){
@@ -735,8 +744,8 @@ function sumSeries(codes, months, metric, excludeOpening=true){
     if(metric==='cr') out[m]+=t.cr;
     else if(metric==='dr') out[m]+=t.dr;
     else if(metric==='count') out[m]+=1;
-    else if(metric==='netdr') out[m]+= (t.dr - t.cr); // asset-natured (Bank, Cash): debit increases balance
-    else out[m]+= (t.cr - t.dr); // income/liability-natured: credit increases balance
+    else if(metric==='netdr') out[m]+= (t.dr - t.cr);
+    else out[m]+= (t.cr - t.dr);
   });
   return out;
 }
@@ -759,7 +768,6 @@ function totalForPeriod(codes, metric, monthsSel, excludeOpening=true){
   });
   return s;
 }
-/* Indian Financial Year (April–March) bucketing, used for quick-select presets */
 function fyLabelForMonth(m){
   const y = Number(m.slice(0,4)), mo = Number(m.slice(5,7));
   return mo>=4 ? `FY ${y}-${String(y+1).slice(2)}` : `FY ${y-1}-${String(y).slice(2)}`;
@@ -795,21 +803,6 @@ function companyNameFor(companyId){
   return (COMPANIES.find(c=>c.id===companyId)||{}).name || companyId;
 }
 
-/* ============ SALES (rebuilt on the real ledger mechanism) ============
-   Discovered by direct reconciliation against the company's real Sales
-   Register: "SALES A/C" and "SALES GOODS RETURN A/C" never appear as their
-   own ledger — they only appear as the REFCODE (counter-reference) on the
-   actual channel/state ledger's own transaction row. A real sale is a
-   transaction whose refcode is exactly "SALES A/C", with the DEBIT side
-   holding the amount and `code` naming the exact channel+state ledger
-   (e.g. "MYN-KARNATAKA"). A sales return works the same way via
-   "SALES GOODS RETURN A/C", with the amount on the CREDIT side. This
-   replaced an earlier heuristic (matching "X RECEIPTS" ledger names) that
-   was confirmed wrong on direct comparison with the real books — those
-   RECEIPTS ledgers track something else (likely settlement timing), not
-   sales, and using them silently inflated Gujarat's figures while getting
-   Karnataka's sign backwards entirely (showing returns as if they were sales).
-*/
 const SALES_REFCODE = 'SALES A/C';
 const SALES_RETURN_REFCODE = 'SALES GOODS RETURN A/C';
 const CHANNEL_PREFIX = {'WEB-':'Website','MYN-':'Myntra','AMA-':'Amazon','FLI-':'Flipkart','MEE-':'Meesho','AJIO-':'Ajio'};
@@ -823,10 +816,6 @@ function parseStateFromCode(code){
   for(const prefix in CHANNEL_PREFIX){ if(upper.startsWith(prefix)) return upper.slice(prefix.length).replace(/^-/,''); }
   return null;
 }
-/* Aggregates every transaction matching a given refcode, grouped however
-   groupFn resolves each one's `code` (by channel, by state, or flat total
-   if groupFn is null). Returns both a grand total per group and a
-   per-month series per group, since every view needs one or the other. */
 function aggregateByRefcode(refcodeTarget, amountSide, monthsSel, groupFn){
   const monthSet = monthsSel && monthsSel.length ? new Set(monthsSel) : null;
   const totals = {}, perMonth = {}, codesByGroup = {};
@@ -834,7 +823,7 @@ function aggregateByRefcode(refcodeTarget, amountSide, monthsSel, groupFn){
     if(t.refcode !== refcodeTarget) return;
     if(ACTIVE_PARTIES && !ACTIVE_PARTIES.has(t.code)) return;
     const amt = amountSide==='dr' ? t.dr : t.cr;
-    if(amountSide==='dr' && amt < 0) return; // exclude negative sales entries — confirmed data-entry anomalies in the source software, not real returns (those live in the separate Sales Goods Return ledger)
+    if(amountSide==='dr' && amt < 0) return;
     const group = groupFn ? groupFn(t.code) : '_TOTAL_';
     if(group==null) return;
     if(monthSet && !monthSet.has(t.date.slice(0,7))) return;
@@ -848,12 +837,6 @@ function aggregateByRefcode(refcodeTarget, amountSide, monthsSel, groupFn){
   Object.keys(codesByGroup).forEach(g=>codesByGroup[g]=[...codesByGroup[g]]);
   return {totals, perMonth, codesByGroup};
 }
-/* Prefers the authoritative Excel report data (exact-match confirmed against
-   the real Sales Register) whenever it's available for this company/kind;
-   falls back to the ledger refcode reconstruction only for periods that
-   don't yet have a report uploaded (e.g. FY 2025-26, before these exports
-   existed), so older months still show a reasonable estimate rather than
-   a blank chart. */
 function reportAggregate(kind, monthsSel, groupFn){
   const monthSet = monthsSel && monthsSel.length ? new Set(monthsSel) : null;
   const totals = {}, perMonth = {}, codesByGroup = {};
@@ -870,15 +853,6 @@ function reportAggregate(kind, monthsSel, groupFn){
   Object.keys(codesByGroup).forEach(g=>codesByGroup[g]=[...codesByGroup[g]]);
   return {totals, perMonth, codesByGroup};
 }
-/* GST-corrected ledger reconstruction for Sales, used only as a fallback
-   when no Sales Register export covers the selected period. Verified
-   exactly (to 3 decimal places, 5.000% each time) across three independent
-   months of real data: netting the same-period Sales Goods Return against
-   gross Sales (both matched by refcode) and multiplying by 1.05 reconstructs
-   the true GST-inclusive Sales Register figure. 5% is the standard GST rate
-   for this price point. Recent/current months may still run a bit high
-   until pending orders settle — this is a large accuracy improvement over
-   plain gross ledger matching, not a guaranteed exact match for every period. */
 const GST_MULTIPLIER = 1.05;
 function aggregateSalesGstCorrected(monthsSel, groupFn){
   const monthSet = monthsSel && monthsSel.length ? new Set(monthsSel) : null;
@@ -890,7 +864,7 @@ function aggregateSalesGstCorrected(monthsSel, groupFn){
     const group = groupFn ? groupFn(t.code) : '_TOTAL_';
     if(group==null) return;
     if(t.refcode === SALES_REFCODE){
-      if(t.dr < 0) return; // exclude negative sales entries — confirmed data-entry anomalies
+      if(t.dr < 0) return;
       grossTotals[group] = (grossTotals[group]||0) + (t.dr - t.cr);
       if(!grossPerMonth[group]) grossPerMonth[group] = {};
       grossPerMonth[group][m] = (grossPerMonth[group][m]||0) + (t.dr - t.cr);
@@ -942,7 +916,6 @@ function salesReturnTotal(monthsSel){
   return aggregateByRefcode(SALES_RETURN_REFCODE, 'cr', monthsSel, null).totals['_TOTAL_'] || 0;
 }
 
-/* Known category definitions, resolved dynamically against this FY's ledger names */
 function getChannelDefs(){
   return {
     'Website': codesByNameContains('WEBSITE RECEIPTS'),
@@ -953,13 +926,6 @@ function getChannelDefs(){
     'Ajio': codesByNameContains('AJIO'),
   };
 }
-/* Some companies (e.g. a newly-added entity) don't yet post to the umbrella
-   "X RECEIPTS" ledgers at all — they record sales directly on the per-state
-   ledgers (MYN-<state>, AMA-<state>, etc). Where a company genuinely has
-   both, the two are near-duplicates of the same money (confirmed against
-   real data), so combining them would double-count. This resolves, per
-   company, whichever the company actually uses: RECEIPTS first, state-wise
-   ledgers only as a fallback when that company has no RECEIPTS activity. */
 const STATE_PREFIX = {'Website':'WEB-','Myntra':'MYN-','Amazon':'AMA-','Flipkart':'FLI-','Meesho':'MEE-','Ajio':'AJIO-'};
 function getChannelCodesByCompany(){
   const receiptDefs = getChannelDefs();
@@ -1018,11 +984,6 @@ function mergeAllChannelsByCompany(channelCodesByCompany){
   });
   return merged;
 }
-/* ============ AUTHORITATIVE SALES DATA (from Sales Register / Sales Goods
-   Return Register Excel exports, when available — confirmed exact-match
-   against the real reports; ledger reconstruction alone was found to
-   diverge 25-30%, likely from business rules like cancelled/RTO orders that
-   aren't visible in raw ledger postings) ============ */
 function channelFromParty(party){
   const p = (party||'').toUpperCase();
   for(const prefix in CHANNEL_PREFIX){ if(p.startsWith(prefix)) return CHANNEL_PREFIX[prefix]; }
@@ -1031,7 +992,7 @@ function channelFromParty(party){
 function stateFromParty(party){
   const p = (party||'').toUpperCase();
   for(const prefix in CHANNEL_PREFIX){ if(p.startsWith(prefix)) return p.slice(prefix.length).replace(/^-/,'') || p; }
-  return p; // non-channel party (e.g. an inter-company transfer) — shown as its own row, not silently dropped
+  return p;
 }
 function hasReportData(){ return !!(DATA && ((DATA.sales_register&&DATA.sales_register.length) || (DATA.sales_returns&&DATA.sales_returns.length))); }
 function reportRecordsFor(kind){ return (DATA && DATA[kind] ? DATA[kind] : []).filter(r=>ACTIVE_COMPANIES.has(r.company_id) && (!ACTIVE_PARTIES || ACTIVE_PARTIES.has(r.party))); }
@@ -1080,10 +1041,6 @@ function openDrill(title, sub, codes, month){
 function closeDrill(){ document.getElementById('drillModal').classList.remove('open'); }
 document.getElementById('drillModal').addEventListener('click', e=>{ if(e.target===e.currentTarget) closeDrill(); });
 
-/* Sales vs Returns, for a given channel or shipping state — shows a
-   monthly Sales/Returns chart, a compact table, and the return rate.
-   Uses report data (exact) where available, falling back to ledger
-   refcode matching (dr=sale, cr=return) for periods with no report yet. */
 function salesReturnsMonthlyForCodes(codes, monthsSel){
   const months = monthsSel && monthsSel.length ? [...monthsSel].sort() : monthsInData();
   const codeSet = new Set(codes);
@@ -1146,9 +1103,6 @@ function openSalesReturnsDrill(name, codes, monthsSel){
       scales:{y:{ticks:{callback:v=>'₹'+fmt(Math.abs(v))},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
   });
 }
-/* Combined Sales+Returns breakdown table (Sales, Returns, Return %) — used
-   by both the Sales and Sales Returns pages so the two are always shown
-   side by side, not as two disconnected numbers. */
 function renderCombinedBreakdownTable(containerId, groupLabel, names, salesTotals, returnTotals, codesByGroup, monthsSel){
   document.getElementById(containerId).innerHTML = `<table class="ldg-table"><thead><tr><th>${groupLabel}</th><th class="num">Sales</th><th class="num">Returns</th><th class="num">Return %</th></tr></thead><tbody>
     ${names.map(name=>{
@@ -1159,8 +1113,6 @@ function renderCombinedBreakdownTable(containerId, groupLabel, names, salesTotal
   </tbody></table>`;
 }
 
-/* Expense category → vendor breakdown, using refcode (each transaction's
-   real counter-party ledger, not a heuristic) — then vendor → transactions. */
 function openExpenseVendorDrill(code, categoryName){
   const txs = ACTIVE_TRANSACTIONS.filter(t=>t.code===code && !isBalanceMarker(t));
   const byVendor = {};
@@ -1185,10 +1137,6 @@ function openExpenseVendorDrill(code, categoryName){
       (vendorName) => openDrillByVendor(code, vendorName, categoryName));
   }
 }
-/* Purchases vendor breakdown: code and refcode are swapped relative to
-   Expenses here — for a real purchase bill, `refcode` is the purchase
-   category (e.g. "FINISH PURCHASE A/C") and `code` is the actual vendor.
-   Includes the same verified /1.05 GST correction as the KPI total. */
 function openPurchaseVendorDrill(categoryRefcode, monthsSel){
   const monthSet = monthsSel && monthsSel.length ? new Set(monthsSel) : null;
   const txs = ACTIVE_TRANSACTIONS.filter(t=>t.refcode===categoryRefcode && !isBalanceMarker(t) && (!monthSet || monthSet.has(t.date.slice(0,7))));
@@ -1284,7 +1232,7 @@ function renderAll(){
   const bankCodes = codesByNameContains('HDFC BANK');
   const vendorCodes = codesByAtype('113');
 
-  const bankSeries = sumSeries(bankCodes, months, 'netdr', false); // netdr: Bank is asset-natured (debit increases balance); false: keep opening balances for a correct cumulative position
+  const bankSeries = sumSeries(bankCodes, months, 'netdr', false);
   let running=0; const bankCum={};
   months.forEach(m=>{ running += bankSeries[m]; bankCum[m]=running; });
 
@@ -1326,7 +1274,7 @@ function renderExpensesPage(monthsSel){
   const adCodesFlat = Object.values(getAdDefs()).flat();
   const adSet = new Set(adCodesFlat);
   const expenseCodesRaw = codesByAtype('4');
-  const expenseCodes = expenseCodesRaw.filter(c=>!adSet.has(c)); // exclude ad-spend ledgers to avoid double counting
+  const expenseCodes = expenseCodesRaw.filter(c=>!adSet.has(c));
 
   const expByLedger = {};
   ACTIVE_TRANSACTIONS.forEach(t=>{
@@ -1364,7 +1312,7 @@ function renderSalesPage(monthsSel){
   const drillCb = (name, codes) => openSalesReturnsDrill(name, codes, monthsSel);
 
   destroyChart('rev1');
-  const monthlyByChannel = salesByChannel(null); // full range for the monthly trend, independent of the period filter's own total
+  const monthlyByChannel = salesByChannel(null);
   charts.rev1 = makeClickableLine(document.getElementById('chartRevMonthly'), mLabels,
     chNames.map((ch,i)=>({label:ch,data:periodMonths.map(m=>(monthlyByChannel.perMonth[ch]||{})[m]||0),borderColor:PALETTE[i%PALETTE.length],backgroundColor:'transparent',tension:0.3})),
     periodMonths, chCodesByGroup, {}, (label,codes,month)=>openSalesReturnsDrill(label,codes,month?[month]:monthsSel));
@@ -1494,18 +1442,18 @@ function renderOverview(monthsSel){
   const purchaseSet = new Set(purchaseCodes);
   const CONFOUNDED_NAMES = new Set(['PURCHASE (SERVICES)','PURCHASE (CAPTIAL GOODS/ASSETS)','INTEREST A/C PURCHASE']);
   const confoundedSet = new Set(expenseCodesRaw.filter(c=>CONFOUNDED_NAMES.has((LEDGER_MAP[c]?.name||'').trim())));
-  const expenseCodes = expenseCodesRaw.filter(c=>!adSet.has(c) && !purchaseSet.has(c) && !confoundedSet.has(c)); // exclude ad spend, goods purchases, and the confounded services/capital-goods/interest ledgers (unclear if already counted elsewhere — excluded rather than risk double-counting)
+  const expenseCodes = expenseCodesRaw.filter(c=>!adSet.has(c) && !purchaseSet.has(c) && !confoundedSet.has(c));
   const vendorCodes = codesByAtype('113');
 
   const totalRevenue = Object.values(byChannel.totals).reduce((a,b)=>a+b,0);
   const byChannelReturns = salesReturnByChannel(monthsSel);
-  const totalReturns = Math.abs(Object.values(byChannelReturns.totals).reduce((a,b)=>a+b,0)); // returns are stored as negative amounts — use the magnitude here
+  const totalReturns = Math.abs(Object.values(byChannelReturns.totals).reduce((a,b)=>a+b,0));
   const totalAds = adCodesFlat.length ? totalForPeriod(adCodesFlat,'dr',monthsSel) : 0;
   const totalPurchases = totalPurchasesForPeriod(monthsSel);
   const totalExpenses = totalForPeriod(expenseCodes,'dr',monthsSel) - totalForPeriod(expenseCodes,'cr',monthsSel);
-  const netProfit = totalRevenue - totalReturns - totalExpenses - totalAds; // Purchases intentionally excluded — without opening/closing stock data, raw goods purchased isn't the same as cost of goods sold, and subtracting it directly would misstate profit
+  const netProfit = totalRevenue - totalReturns - totalExpenses - totalAds;
 
-  const bankSumsAll = sumSeries(bankCodes, months, 'netdr', false); // netdr: Bank is asset-natured (debit increases balance); false: keep opening balances for a correct cumulative position
+  const bankSumsAll = sumSeries(bankCodes, months, 'netdr', false);
   let running=0; const bankCumAll={};
   months.forEach(m=>{ running += bankSumsAll[m]; bankCumAll[m]=running; });
   const netBank = asOf ? (bankCumAll[asOf]||0) : running;
@@ -1582,8 +1530,293 @@ function renderOverview(monthsSel){
     periodMonths, {'Bank':bankCodes});
 }
 
+/* ============ RECONCILIATION — WEBSITE ============
+   Data source: DATA.reconciliation.website — { cod_orders[], prepaid_daily[] }
+   cod_orders is row-level (one row per Sale Order Number, with status,
+   sales_total, dispatch_date) — filtered here by dispatch month, same as
+   every other period-filterable tab. prepaid_daily is a running cumulative
+   check (no order-level prepaid data exists), shown as a trend, not a
+   per-order table. */
+const RECON_STATUS_META = {
+  paid: {label:'Paid', cls:'credit'},
+  pending_normal: {label:'Pending (0–15d)', cls:'neutral'},
+  pending_watch: {label:'Pending (16–45d)', cls:'gold'},
+  overdue_unpaid: {label:'Overdue (45d+)', cls:'debit'},
+  anomaly_value_mismatch: {label:'Anomaly: value mismatch', cls:'debit'},
+  anomaly_paid_but_returned: {label:'Anomaly: paid + returned', cls:'debit'},
+  returned_no_payment_expected: {label:'Returned', cls:'neutral'},
+  not_yet_dispatched: {label:'Not yet dispatched', cls:'neutral'},
+};
+let reconWebsiteStatusFilter = null;
+
+function reconWebsiteData(){ return (DATA && DATA.reconciliation && DATA.reconciliation.website) || {cod_orders:[], prepaid_daily:[]}; }
+function renderReconWebsite(monthsSel){
+  const body = document.getElementById('reconWebsiteBody');
+  const website = reconWebsiteData();
+  if(!website.cod_orders.length){
+    body.innerHTML = `<div class="empty-state"><div class="glyph">§</div><p>No website reconciliation data loaded yet</p><small>Upload Unicommerce sales/returns, Shipway payouts, and the Fastrr settlement CSV to the Drive folder, then Pull latest backup</small></div>`;
+    return;
+  }
+  const monthSet = monthsSel && monthsSel.length ? new Set(monthsSel) : null;
+  const orders = website.cod_orders.filter(o => !monthSet || (o.dispatch_date && monthSet.has(o.dispatch_date.slice(0,7))));
+
+  const counts = {}, values = {};
+  orders.forEach(o=>{ counts[o.status]=(counts[o.status]||0)+1; values[o.status]=(values[o.status]||0)+(o.sales_total||0); });
+
+  const prepaid = website.prepaid_daily.filter(d => !monthSet || monthSet.has(d.date.slice(0,7)));
+  const latestGap = prepaid.length ? prepaid[prepaid.length-1].cum_gap : null;
+  const anomalyDays = prepaid.filter(d=>d.flag_anomaly).length;
+
+  const statusOrder = Object.keys(RECON_STATUS_META);
+
+  body.innerHTML = `
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-label">COD Orders — Paid</div><div class="kpi-value credit">${counts.paid||0}</div><div class="kpi-note">${fmtSigned(values.paid||0)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">COD Orders — Overdue (45d+)</div><div class="kpi-value debit">${counts.overdue_unpaid||0}</div><div class="kpi-note">${fmtSigned(values.overdue_unpaid||0)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">COD Orders — Pending</div><div class="kpi-value gold">${(counts.pending_normal||0)+(counts.pending_watch||0)}</div><div class="kpi-note">Within normal settlement lag</div></div>
+      <div class="kpi-card"><div class="kpi-label">Prepaid cumulative gap</div><div class="kpi-value ${latestGap>0?'debit':'credit'}">${latestGap!=null?fmtSigned(latestGap):'—'}</div><div class="kpi-note">${anomalyDays} day(s) flagged outside tolerance</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">COD order status</div>
+      <div class="card-hint">Click a bar to filter the order table below. Overdue = no Shipway payout found 45+ days after dispatch.</div>
+      <div class="chart-wrap" id="wrapReconWebStatus"><canvas id="chartReconWebStatus"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Prepaid — cumulative sales vs Fastrr settlement</div>
+      <div class="card-hint">No order-level prepaid payout data exists, so this is checked as a running total, not per-order. The last few days are normal settlement lag, not a gap.</div>
+      <div class="chart-wrap" id="wrapReconWebPrepaid"><canvas id="chartReconWebPrepaid"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Order detail ${reconWebsiteStatusFilter? '— '+RECON_STATUS_META[reconWebsiteStatusFilter].label : ''}</div>
+      <div class="status-filter-bar">
+        <span class="status-pill ${!reconWebsiteStatusFilter?'gold':'neutral'}" style="cursor:pointer" onclick="reconWebsiteStatusFilter=null;renderReconWebsite(selectedMonthsArr('reconwebsite'))">All (${orders.length})</span>
+        ${statusOrder.filter(k=>counts[k]).map(k=>`<span class="status-pill ${RECON_STATUS_META[k].cls}" style="cursor:pointer;${reconWebsiteStatusFilter===k?'outline:2px solid var(--gold)':''}" onclick="reconWebsiteStatusFilter='${k}';renderReconWebsite(selectedMonthsArr('reconwebsite'))">${RECON_STATUS_META[k].label} (${counts[k]})</span>`).join('')}
+      </div>
+      <div id="reconWebOrderTable"></div>
+    </div>`;
+
+  destroyChart('reconWebStatus');
+  charts.reconWebStatus = new Chart(document.getElementById('chartReconWebStatus'), {
+    type:'bar',
+    data:{labels: statusOrder.map(k=>RECON_STATUS_META[k].label),
+      datasets:[{data: statusOrder.map(k=>counts[k]||0),
+        backgroundColor: statusOrder.map(k=>k==='paid'?CREDIT:(k.startsWith('anomaly')||k==='overdue_unpaid'?DEBIT:GOLD)),
+        borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      onClick:(evt,elements,chart)=>{ if(elements.length){ reconWebsiteStatusFilter = statusOrder[elements[0].index]; renderReconWebsite(selectedMonthsArr('reconwebsite')); } },
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.raw} order(s) · click to filter`}}},
+      scales:{y:{ticks:{stepSize:1}},x:{grid:{display:false},ticks:{maxRotation:20,minRotation:20,font:{size:10}}}}}
+  });
+
+  if(prepaid.length){
+    destroyChart('reconWebPrepaid');
+    charts.reconWebPrepaid = new Chart(document.getElementById('chartReconWebPrepaid'), {
+      type:'line',
+      data:{labels: prepaid.map(d=>d.date.slice(0,10)),
+        datasets:[
+          {label:'Cumulative gap', data: prepaid.map(d=>d.cum_gap), borderColor:GOLD, backgroundColor:'rgba(156,122,46,0.10)', fill:true, tension:0.25, pointRadius: prepaid.map(d=>d.flag_anomaly?4:0), pointBackgroundColor:DEBIT},
+        ]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` Cumulative gap: ${fmtSigned(c.raw)}`}}},
+        scales:{y:{ticks:{callback:v=>'₹'+fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false},ticks:{maxTicksLimit:10}}}}
+    });
+  }
+
+  const filtered = reconWebsiteStatusFilter ? orders.filter(o=>o.status===reconWebsiteStatusFilter) : orders;
+  const sorted = [...filtered].sort((a,b)=>(b.dispatch_date||'').localeCompare(a.dispatch_date||''));
+  document.getElementById('reconWebOrderTable').innerHTML = sorted.length ? `
+    <div style="max-height:400px;overflow-y:auto"><table class="ldg-table"><thead><tr><th>Sale Order #</th><th>Dispatch date</th><th class="num">Amount</th><th>Status</th></tr></thead><tbody>
+      ${sorted.slice(0,300).map(o=>`<tr><td style="font-family:var(--mono);font-size:11.5px">${o.sale_order_number}</td><td>${o.dispatch_date?o.dispatch_date.slice(0,10):'—'}</td><td class="num">${fmt(o.sales_total||0)}</td><td><span class="status-pill ${RECON_STATUS_META[o.status].cls}">${RECON_STATUS_META[o.status].label}</span></td></tr>`).join('')}
+    </tbody></table></div>` : `<div class="empty-state"><p>No orders in this slice</p></div>`;
+}
+
+/* ============ RECONCILIATION — MYNTRA ============ */
+function reconMyntraData(){ return (DATA && DATA.reconciliation && DATA.reconciliation.myntra) || {}; }
+function renderReconMyntra(monthsSel){
+  const body = document.getElementById('reconMyntraBody');
+  const myntra = reconMyntraData();
+  if(!myntra.cost_of_business){
+    body.innerHTML = `<div class="empty-state"><div class="glyph">§</div><p>No Myntra reconciliation data loaded yet</p><small>Upload the Myntra finance/GST workbook(s) and Unicommerce Myntra sales/returns to the Drive folder, then Pull latest backup</small></div>`;
+    return;
+  }
+  const oc = myntra.order_count_match || {};
+  const rc = myntra.return_count_match || {};
+  const cost = myntra.cost_of_business;
+  const monthSet = monthsSel && monthsSel.length ? new Set(monthsSel) : null;
+  const orders = (myntra.orders||[]).filter(o => !monthSet || (o.order_date && monthSet.has(o.order_date.slice(0,7))));
+  const settledOrders = orders.filter(o=>o.status==='settled');
+  const periodCustPaid = settledOrders.reduce((s,o)=>s+(o.Customer_Paid_Amount||0),0);
+  const periodSettled = settledOrders.reduce((s,o)=>s+(o.settled_total||0),0);
+  const periodCostPct = periodCustPaid ? (periodCustPaid-periodSettled)/periodCustPaid*100 : null;
+
+  body.innerHTML = `
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-label">Order count match</div><div class="kpi-value">${oc.common||0} / ${oc.unicommerce_orders||0}</div><div class="kpi-note">Unicommerce orders also found in Myntra's report</div></div>
+      <div class="kpi-card"><div class="kpi-label">Return count match (excl. RTO)</div><div class="kpi-value">${rc.common||0} / ${rc.unicommerce_returns||0}</div><div class="kpi-note">${rc.rto_expected_absent_from_finance_report||0} RTO orders correctly absent — see Myntra-RTO.csv instead</div></div>
+      <div class="kpi-card"><div class="kpi-label">Cost of doing business</div><div class="kpi-value debit">${cost.cost_pct!=null?cost.cost_pct.toFixed(2)+'%':'—'}</div><div class="kpi-note">Basis: Customer Paid Amount (= Unicommerce "Total")</div></div>
+      <div class="kpi-card"><div class="kpi-label">Selected-period cost %</div><div class="kpi-value gold">${periodCostPct!=null?periodCostPct.toFixed(2)+'%':'—'}</div><div class="kpi-note">${settledOrders.length} settled orders in this period</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Cost breakdown — % of Customer Paid Amount</div>
+      <div class="card-hint">Whole-dataset basis (the underlying Myntra export covers its own fixed window)</div>
+      <table class="ldg-table"><thead><tr><th>Component</th><th class="num">Amount</th><th class="num">% of Customer Paid</th></tr></thead><tbody>
+        ${Object.entries(cost.breakdown||{}).map(([k,v])=>`<tr><td>${k.replace(/_/g,' ')}</td><td class="num">${fmt(v)}</td><td class="num">${cost.customer_paid_amount?(v/cost.customer_paid_amount*100).toFixed(2)+'%':'—'}</td></tr>`).join('')}
+      </tbody></table>
+    </div>
+    <div class="card" style="background:var(--surface-2)">
+      <div class="card-title">Data quality flags</div>
+      <p style="font-size:12.5px;color:var(--text-2);line-height:1.7">
+        <strong>${(myntra.partial_settlement_orders||[]).length}</strong> orders are split across both the settled and unsettled sheets (part paid, part still pending) — review individually rather than treating settlement as all-or-nothing per order.<br>
+        <strong>${myntra.raw_rto_rows||0}</strong> rows loaded from Myntra-RTO.csv — the separate RTO report, not yet numerically reconciled against Unicommerce (no shared order-ID key between the two exports).
+      </p>
+    </div>
+    <div class="card">
+      <div class="card-title">Order detail — this period</div>
+      <div class="card-hint">settled_total = Settled_Amount_Postpaid + Settled_Amount_Prepaid</div>
+      <div id="reconMyntraOrderTable"></div>
+    </div>`;
+
+  const sorted = [...orders].sort((a,b)=>(b.order_date||'').localeCompare(a.order_date||''));
+  document.getElementById('reconMyntraOrderTable').innerHTML = sorted.length ? `
+    <div style="max-height:400px;overflow-y:auto"><table class="ldg-table"><thead><tr><th>Order date</th><th>Seller Order ID</th><th>Status</th><th class="num">Customer Paid</th><th class="num">Settled</th></tr></thead><tbody>
+      ${sorted.slice(0,300).map(o=>`<tr><td>${o.order_date?o.order_date.slice(0,10):'—'}</td><td style="font-family:var(--mono);font-size:11px">${(o.seller_order_id||'').slice(0,8)}…</td><td><span class="status-pill ${o.status==='settled'?'credit':'neutral'}">${o.status}</span></td><td class="num">${fmt(o.Customer_Paid_Amount||0)}</td><td class="num">${fmt(o.settled_total||0)}</td></tr>`).join('')}
+    </tbody></table></div>` : `<div class="empty-state"><p>No orders in this slice</p></div>`;
+}
+
+/* ============ RECONCILIATION — AMAZON ============ */
+function reconAmazonData(){ return (DATA && DATA.reconciliation && DATA.reconciliation.amazon) || {}; }
+function renderReconAmazon(monthsSel){
+  const body = document.getElementById('reconAmazonBody');
+  const amazon = reconAmazonData();
+  if(!amazon.settlement_batches || !amazon.settlement_batches.length){
+    body.innerHTML = `<div class="empty-state"><div class="glyph">§</div><p>No Amazon reconciliation data loaded yet</p><small>Upload the MTR report and settlement XML/flat-file exports to the Drive folder, then Pull latest backup</small></div>`;
+    return;
+  }
+  const monthSet = monthsSel && monthsSel.length ? new Set(monthsSel) : null;
+  const batches = amazon.settlement_batches.filter(b => !monthSet || (b.deposit_date && monthSet.has(b.deposit_date.slice(0,7))));
+  const mtrOrders = (amazon.mtr_orders||[]).filter(o => !monthSet || (o['Order Date'] && monthSet.has(o['Order Date'].slice(0,7))));
+
+  const c = amazon.order_return_consistency || {};
+  const cost = amazon.cost_of_business;
+  const totalSettled = batches.reduce((s,b)=>s+(b.total_amount>0?b.total_amount:0),0);
+  const negBatches = batches.filter(b=>b.total_amount<0).length;
+
+  body.innerHTML = `
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-label">MTR orders matched to settlement</div><div class="kpi-value">${c.matched_to_settlement||0} / ${c.mtr_orders||0}</div><div class="kpi-note">Unmatched are usually pending settlement</div></div>
+      <div class="kpi-card"><div class="kpi-label">Settlement batches this period</div><div class="kpi-value">${batches.length}</div><div class="kpi-note">${negBatches} negative (carried forward, not debited)</div></div>
+      <div class="kpi-card"><div class="kpi-label">Total settled</div><div class="kpi-value credit">${fmtSigned(totalSettled)}</div><div class="kpi-note">Positive settlements only</div></div>
+      <div class="kpi-card"><div class="kpi-label">Cost of doing business</div><div class="kpi-value debit">${cost && cost.cost_pct!=null?cost.cost_pct.toFixed(2)+'%':'—'}</div><div class="kpi-note">FBA fees + commission, flat-file stream</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Settlement batches — deposit date vs amount</div>
+      <div class="card-hint">Two parallel settlement streams (confirmed real, matched to the bank statement) run alongside each other</div>
+      <div class="chart-wrap" id="wrapReconAmzBatches"><canvas id="chartReconAmzBatches"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Unmatched MTR orders, by transaction type</div>
+      <table class="ldg-table"><thead><tr><th>Transaction type</th><th class="num">Count</th></tr></thead><tbody>
+        ${Object.entries(c.unmatched_by_transaction_type||{}).map(([k,v])=>`<tr><td>${k}</td><td class="num">${v}</td></tr>`).join('') || '<tr><td colspan="2" style="color:var(--text-3);font-size:12px">None</td></tr>'}
+      </tbody></table>
+    </div>
+    <div class="card">
+      <div class="card-title">MTR orders — this period</div>
+      <div id="reconAmzOrderTable"></div>
+    </div>`;
+
+  destroyChart('reconAmzBatches');
+  const sortedBatches = [...batches].sort((a,b)=>(a.deposit_date||'').localeCompare(b.deposit_date||''));
+  charts.reconAmzBatches = new Chart(document.getElementById('chartReconAmzBatches'), {
+    type:'bar',
+    data:{labels: sortedBatches.map(b=>b.deposit_date?b.deposit_date.slice(5,10):'—'),
+      datasets:[{label:'Settlement amount', data: sortedBatches.map(b=>b.total_amount),
+        backgroundColor: sortedBatches.map(b=>b.total_amount>=0?CREDIT:DEBIT), borderRadius:3}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmtSigned(c.raw)} · ${sortedBatches[c.dataIndex].stream} stream`}}},
+      scales:{y:{ticks:{callback:v=>'₹'+fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
+  });
+
+  const sortedOrders = [...mtrOrders].sort((a,b)=>(b['Order Date']||'').localeCompare(a['Order Date']||''));
+  document.getElementById('reconAmzOrderTable').innerHTML = sortedOrders.length ? `
+    <div style="max-height:400px;overflow-y:auto"><table class="ldg-table"><thead><tr><th>Order date</th><th>Order ID</th><th>Transaction type</th><th class="num">Invoice amount</th><th>Matched</th></tr></thead><tbody>
+      ${sortedOrders.slice(0,300).map(o=>`<tr><td>${o['Order Date']?o['Order Date'].slice(0,10):'—'}</td><td style="font-family:var(--mono);font-size:11px">${o['Order Id']}</td><td>${o['Transaction Type']}</td><td class="num">${fmt(o['Invoice Amount']||0)}</td><td><span class="status-pill ${o.matched_to_settlement?'credit':'neutral'}">${o.matched_to_settlement?'Yes':'Pending'}</span></td></tr>`).join('')}
+    </tbody></table></div>` : `<div class="empty-state"><p>No orders in this slice</p></div>`;
+}
+
+/* ============ RECONCILIATION — BANK STATEMENT ============
+   Data source: DATA.reconciliation.bank — { transactions[] (every parsed
+   HDFC statement row, with a `matched` flag), channel_match_summary{}
+   (per-channel matched count/amount + any of that channel's own
+   settlement rows that couldn't be found in the bank at all),
+   unmatched_credits[] (bank credits no channel explains — the main new
+   visibility this tab adds; previously the bank statement was a manual
+   cross-check only). Amazon match is approximate (date+amount, no shared
+   reference exists between Amazon's settlement report and the bank) —
+   everything else here is an exact reference-number match. */
+const CHANNEL_LABELS = {fastrr_prepaid:'Website (Prepaid · Fastrr)', myntra:'Myntra', shipway_cod:'Website (COD · Shipway)', amazon:'Amazon'};
+function reconBankData(){ return (DATA && DATA.reconciliation && DATA.reconciliation.bank) || {transactions:[]}; }
+function renderReconBank(monthsSel){
+  const body = document.getElementById('reconBankBody');
+  const bank = reconBankData();
+  if(!bank.transactions || !bank.transactions.length){
+    body.innerHTML = `<div class="empty-state"><div class="glyph">§</div><p>No bank statement loaded yet</p><small>Upload the HDFC statement PDF to the Drive folder, then Pull latest backup</small></div>`;
+    return;
+  }
+  const monthSet = monthsSel && monthsSel.length ? new Set(monthsSel) : null;
+  const txs = bank.transactions.filter(t => !monthSet || (t.date && monthSet.has(t.date.slice(0,7))));
+  const credits = txs.filter(t=>t.deposit>0);
+  const debits = txs.filter(t=>t.withdrawal>0);
+  const totalCredits = credits.reduce((s,t)=>s+t.deposit,0);
+  const totalDebits = debits.reduce((s,t)=>s+t.withdrawal,0);
+  const matchedCredits = credits.filter(t=>t.matched);
+  const matchedAmount = matchedCredits.reduce((s,t)=>s+t.deposit,0);
+  const unmatched = (bank.unmatched_credits||[]).filter(u => !monthSet || (u.date && monthSet.has(u.date.slice(0,7))));
+  const unmatchedAmount = unmatched.reduce((s,u)=>s+u.deposit,0);
+
+  const summary = bank.channel_match_summary || {};
+  const channelKeys = Object.keys(summary);
+
+  body.innerHTML = `
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-label">Total credits (this period)</div><div class="kpi-value credit">${fmtSigned(totalCredits)}</div><div class="kpi-note">${credits.length} transaction(s)</div></div>
+      <div class="kpi-card"><div class="kpi-label">Matched to a channel</div><div class="kpi-value gold">${credits.length?(matchedCredits.length/credits.length*100).toFixed(0):'0'}%</div><div class="kpi-note">${fmtSigned(matchedAmount)} · ${matchedCredits.length} of ${credits.length}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Unmatched credits</div><div class="kpi-value ${unmatched.length?'debit':'credit'}">${fmtSigned(unmatchedAmount)}</div><div class="kpi-note">${unmatched.length} transaction(s) to review</div></div>
+      <div class="kpi-card"><div class="kpi-label">Total debits (this period)</div><div class="kpi-value debit">${fmtSigned(totalDebits)}</div><div class="kpi-note">${debits.length} transaction(s), not yet categorized</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Match rate by channel</div>
+      <div class="card-hint">Fastrr/Myntra/Shipway are exact reference-number matches; Amazon is date+amount (no shared reference exists in Amazon's own report)</div>
+      <table class="ldg-table"><thead><tr><th>Channel</th><th class="num">Matched count</th><th class="num">Matched amount</th><th class="num">Exact (± ₹2)</th><th>Channel-side gaps</th></tr></thead><tbody>
+        ${channelKeys.map(k=>{
+          const s = summary[k];
+          return `<tr><td>${CHANNEL_LABELS[k]||k}</td><td class="num">${s.matched_count}</td><td class="num credit">${fmt(s.matched_amount)}</td><td class="num">${s.exact_count}/${s.matched_count}</td><td class="num" style="color:${s.unmatched_channel_rows.length?'var(--debit)':'var(--text-3)'}">${s.unmatched_channel_rows.length}</td></tr>`;
+        }).join('') || '<tr><td colspan="5" style="color:var(--text-3);font-size:12px">No channel data loaded yet</td></tr>'}
+      </tbody></table>
+    </div>
+    <div class="card" style="${unmatched.length?'':'background:var(--surface-2)'}">
+      <div class="card-title">Unmatched bank credits</div>
+      <div class="card-hint">Money in that no uploaded channel export explains yet — could be a channel whose file hasn't been uploaded (e.g. Flipkart), or a settlement still pending on the channel side</div>
+      <div id="reconBankUnmatchedTable"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">All transactions — this period</div>
+      <div id="reconBankTxTable"></div>
+    </div>`;
+
+  document.getElementById('reconBankUnmatchedTable').innerHTML = unmatched.length ? `
+    <div style="max-height:320px;overflow-y:auto"><table class="ldg-table"><thead><tr><th>Date</th><th>Narration</th><th>Ref. No.</th><th class="num">Amount</th></tr></thead><tbody>
+      ${unmatched.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(u=>`<tr><td>${u.date?u.date.slice(0,10):'—'}</td><td style="font-size:11.5px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${u.narration||''}</td><td style="font-family:var(--mono);font-size:11px">${u.ref_no||''}</td><td class="num credit">${fmt(u.deposit||0)}</td></tr>`).join('')}
+    </tbody></table></div>` : `<div class="empty-state"><p>Every bank credit in this period is explained by an uploaded channel</p></div>`;
+
+  const sortedTx = [...txs].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  document.getElementById('reconBankTxTable').innerHTML = sortedTx.length ? `
+    <div style="max-height:420px;overflow-y:auto"><table class="ldg-table"><thead><tr><th>Date</th><th>Narration</th><th>Ref. No.</th><th class="num">Withdrawal</th><th class="num">Deposit</th><th class="num">Balance</th><th>Matched</th></tr></thead><tbody>
+      ${sortedTx.slice(0,400).map(t=>`<tr><td>${t.date?t.date.slice(0,10):'—'}</td><td style="font-size:11.5px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.narration||''}</td><td style="font-family:var(--mono);font-size:11px">${t.ref_no||''}</td><td class="num debit">${t.withdrawal?fmt(t.withdrawal):''}</td><td class="num credit">${t.deposit?fmt(t.deposit):''}</td><td class="num">${fmt(t.closing_balance||0)}</td><td>${t.deposit>0?`<span class="status-pill ${t.matched?'credit':'debit'}">${t.matched?'Matched':'Unmatched'}</span>`:''}</td></tr>`).join('')}
+    </tbody></table></div>` : `<div class="empty-state"><p>No transactions in this slice</p></div>`;
+}
+
 /* ============ REPORT BUILDER ============ */
-let rbSelected = new Map(); // code -> name
+let rbSelected = new Map();
 
 function renderReportBuilderMode(){
   const isState = document.getElementById('rb-xaxis').value === 'state';
@@ -1686,23 +1919,7 @@ async function renderSavedReports(){
   });
 }
 
-/* ============ FINANCIAL STATEMENTS ============
-   Classification is derived from the real chart-of-accounts ATYPE codes in
-   this ledger (verified against actual ledger names), not guessed generically:
-     1,7,120,121,122,123,124  → Income (marketplace/website sales channels)
-     8,3                      → Direct expenses / purchases / trading adjustments
-     4,10                     → Indirect expenses
-     5                        → Bank
-     6                        → Cash
-     11                       → Fixed assets
-     14,23,102                → Stock / inventory
-     20                       → GST/TDS/TCS receivable
-     13                       → Partners' capital
-     110                      → Duties & taxes payable
-     21                       → Split by name: "CREDIT CARD" → loan/liability, else partner capital
-     99                       → Split by name: "RECEIVABLE" → asset, "PAYABLE" → liability
-     12,17,106,113            → Sundry debtor/creditor, sign of balance decides which
-*/
+/* ============ FINANCIAL STATEMENTS ============ */
 const ATYPE_INCOME = ['1','7','120','121','122','123','124'];
 const ATYPE_EXP_DIRECT = ['8','3'];
 const ATYPE_EXP_INDIRECT = ['4','10'];
@@ -1747,7 +1964,7 @@ function aggregateByRefcodeUpTo(refcodeTarget, amountSide, asOfMonth){
     if(t.refcode !== refcodeTarget) return;
     if(asOfMonth && t.date.slice(0,7) > asOfMonth) return;
     const amt = amountSide==='dr' ? t.dr : t.cr;
-    if(amountSide==='dr' && amt < 0) return; // exclude negative sales entries — see aggregateByRefcode
+    if(amountSide==='dr' && amt < 0) return;
     total += amt;
   });
   return total;
@@ -1756,7 +1973,7 @@ function computeNetProfitUpTo(asOfMonth){
   const salesAmt = aggregateByRefcodeUpTo(SALES_REFCODE, 'dr', asOfMonth);
   const salesReturnAmt = aggregateByRefcodeUpTo(SALES_RETURN_REFCODE, 'cr', asOfMonth);
   const stateWiseCodes = new Set(Object.keys(LEDGER_MAP).filter(c=>parseChannelFromCode(c)));
-  const incC = ledgersOfAtype(ATYPE_INCOME).filter(c=>!stateWiseCodes.has(c)); // "other income" (interest, etc.) — state-wise sales now handled via refcode above, excluded here to avoid double-counting
+  const incC = ledgersOfAtype(ATYPE_INCOME).filter(c=>!stateWiseCodes.has(c));
   const dC = ledgersOfAtype(ATYPE_EXP_DIRECT), iC = ledgersOfAtype(ATYPE_EXP_INDIRECT);
   const inc = perLedgerSumsUpTo(incC, asOfMonth), d = perLedgerSumsUpTo(dC, asOfMonth), i = perLedgerSumsUpTo(iC, asOfMonth);
   let otherInc=0; incC.forEach(c=>otherInc+=inc[c].cr-inc[c].dr);
@@ -1765,8 +1982,8 @@ function computeNetProfitUpTo(asOfMonth){
   const totalInc = salesAmt - salesReturnAmt + otherInc;
   return totalInc - totalD - totalI;
 }
-const FIN_KINDS = ['overview','revenue','salesreturns','ads','gst','expenses','trialbalance','pnl','balancesheet','cashflow'];
-const finMultiSelection = { overview:null, revenue:null, salesreturns:null, ads:null, gst:null, expenses:null, trialbalance:null, pnl:null, balancesheet:null, cashflow:null }; // null = Full Year, else Set of 'YYYY-MM'
+const FIN_KINDS = ['overview','revenue','salesreturns','ads','gst','expenses','trialbalance','pnl','balancesheet','cashflow','reconwebsite','reconmyntra','reconamazon','reconbank'];
+const finMultiSelection = { overview:null, revenue:null, salesreturns:null, ads:null, gst:null, expenses:null, trialbalance:null, pnl:null, balancesheet:null, cashflow:null, reconwebsite:null, reconmyntra:null, reconamazon:null, reconbank:null };
 
 function renderPeriodChips(kind){
   const months = monthsInData();
@@ -1816,6 +2033,10 @@ function renderFinancialStatement(kind){
   else if(kind==='balancesheet'){ const m=selectedMonthsArr('balancesheet'); renderBalanceSheet(m && m.length ? m[m.length-1] : null); }
   else if(kind==='pnl') renderPnL(selectedMonthsArr('pnl'));
   else if(kind==='cashflow') renderCashFlow(selectedMonthsArr('cashflow'));
+  else if(kind==='reconwebsite') renderReconWebsite(selectedMonthsArr('reconwebsite'));
+  else if(kind==='reconmyntra') renderReconMyntra(selectedMonthsArr('reconmyntra'));
+  else if(kind==='reconamazon') renderReconAmazon(selectedMonthsArr('reconamazon'));
+  else if(kind==='reconbank') renderReconBank(selectedMonthsArr('reconbank'));
 }
 
 function renderTrialBalance(asOfMonth){
