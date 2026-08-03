@@ -20,8 +20,8 @@
   --credit-dim:rgba(31,122,77,0.08);
   --debit:#a83f28;
   --debit-dim:rgba(168,63,40,0.08);
-  --gold:#9c7a2e;
-  --gold-dim:rgba(156,122,46,0.10);
+  --gold:#7a1f2e;
+  --gold-dim:rgba(122,31,46,0.10);
   --text:#1c1a17;
   --text-2:#696255;
   --text-3:#a29a8c;
@@ -125,7 +125,7 @@ select:focus,input[type=text]:focus{border-color:var(--gold)}
 .ledger-opt:last-child{border-bottom:none}
 .ledger-opt:hover{background:var(--surface-3)}
 .ledger-opt input{margin:0}
-.chip{display:inline-flex;align-items:center;gap:6px;background:var(--gold-dim);color:var(--gold);border:1px solid rgba(156,122,46,0.25);border-radius:20px;padding:4px 10px;font-size:11.5px;font-weight:600;margin:3px 4px 0 0}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--gold-dim);color:var(--gold);border:1px solid rgba(122,31,46,0.25);border-radius:20px;padding:4px 10px;font-size:11.5px;font-weight:600;margin:3px 4px 0 0}
 .chip button{background:none;border:none;color:inherit;cursor:pointer;font-size:13px;line-height:1;padding:0}
 
 .empty-state{text-align:center;padding:48px 24px;color:var(--text-2)}
@@ -416,6 +416,11 @@ html,body{overflow-x:hidden;max-width:100%}
         <div id="sourceFile" style="font-family:var(--mono);font-size:11.5px;background:var(--surface-2);border-radius:8px;padding:10px 12px;line-height:1.8">—</div>
       </div>
       <div class="card">
+        <div class="card-title">Reconciliation files found</div>
+        <p style="font-size:12px;color:var(--text-3);margin-bottom:10px">Every reconciliation file type the last sync actually recognized in the Drive folder, and any files it saw but couldn't classify — the fastest way to tell "no data" tabs apart from "genuinely no files uploaded yet."</p>
+        <div id="reconFilesFound" style="font-family:var(--mono);font-size:11.5px;background:var(--surface-2);border-radius:8px;padding:10px 12px;line-height:1.8">—</div>
+      </div>
+      <div class="card">
         <div class="card-title">Security status</div>
         <div style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:var(--credit-dim);border:1px solid rgba(31,122,77,0.25);border-radius:8px;font-size:12.5px;color:var(--text-2);line-height:1.6">
           <span style="color:var(--credit);font-weight:700">✓</span>
@@ -486,8 +491,8 @@ const charts = {};
 const fmt = n => Math.round(n).toLocaleString('en-IN');
 const fmtSigned = n => (n<0?'-':'')+'₹'+Math.abs(Math.round(n)).toLocaleString('en-IN');
 const monthLabel = mk => new Date(mk+'-01').toLocaleDateString('en-IN',{month:'short',year:'2-digit'});
-const GOLD='#9c7a2e', CREDIT='#1f7a4d', DEBIT='#a83f28', TEXT2='#696255';
-const PALETTE=['#9c7a2e','#1f7a4d','#3c6e91','#a83f28','#7a5a9c','#3c9a94','#a86b2e','#5c6b78'];
+const GOLD='#7a1f2e', CREDIT='#1f7a4d', DEBIT='#a83f28', TEXT2='#696255';
+const PALETTE=['#7a1f2e','#1f7a4d','#3c6e91','#a83f28','#7a5a9c','#3c9a94','#a86b2e','#5c6b78'];
 
 Chart.defaults.font.family="'Inter',sans-serif";
 Chart.defaults.color = TEXT2;
@@ -569,6 +574,7 @@ async function loadData(forceSync){
       ((DATA.meta.report_summary||[]).length ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)"><strong>Excel reports:</strong><br>${DATA.meta.report_summary.map(r=>`<span style="color:${r.matched?'var(--credit)':'var(--debit)'}">${r.matched?'✓':'✗'}</span> ${r.source_file} → ${r.matched ? `${r.company} (${r.record_count} rows)` : 'no matching company found'}`).join('<br>')}</div>` : '')
       || '—';
     document.getElementById('sourceGenerated').textContent = DATA.meta.generated_at ? new Date(DATA.meta.generated_at).toLocaleString('en-IN') : '—';
+    renderReconFilesFound();
     refreshEverything();
     toast(forceSync ? 'Synced and reloaded' : 'Loaded');
   }catch(err){
@@ -596,7 +602,7 @@ function renderCompanyFilterBar(){
   bar.style.display = 'flex';
   bar.innerHTML = COMPANIES.map(c=>{
     const active = ACTIVE_COMPANIES.has(c.id);
-    return `<span onclick="toggleCompany('${c.id}')" style="cursor:pointer;display:inline-flex;align-items:center;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;border:1px solid ${active?'rgba(156,122,46,0.3)':'var(--border)'};background:${active?'var(--gold-dim)':'var(--surface-2)'};color:${active?'var(--gold)':'var(--text-2)'}">${c.name}</span>`;
+    return `<span onclick="toggleCompany('${c.id}')" style="cursor:pointer;display:inline-flex;align-items:center;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;border:1px solid ${active?'rgba(122,31,46,0.3)':'var(--border)'};background:${active?'var(--gold-dim)':'var(--surface-2)'};color:${active?'var(--gold)':'var(--text-2)'}">${c.name}</span>`;
   }).join('');
 }
 function toggleCompany(id){
@@ -607,6 +613,45 @@ function toggleCompany(id){
   recomputeActiveTransactions();
   renderCompanyFilterBar();
   refreshEverything();
+}
+
+/* ============ RECONCILIATION FILE-SCAN DIAGNOSTIC ============
+   Every reconciliation file type the backend knows how to classify, and
+   which channel it feeds — shown so "this tab shows no data" can be told
+   apart from "you haven't uploaded that file yet" at a glance, instead of
+   needing DevTools. */
+const RECON_FILE_TYPES = [
+  {key:'website_uni_sales', label:'Website — Unicommerce sales (unic_sales.xlsx)'},
+  {key:'website_uni_return', label:'Website — Unicommerce returns (uni_return.xlsx)'},
+  {key:'shipway_payout', label:'Website — Shipway COD payouts (payout_orders_*.csv)'},
+  {key:'fastrr_settlement', label:'Website — Fastrr prepaid settlement (settlement.csv)'},
+  {key:'myntra_uni_sales', label:'Myntra — Unicommerce sales (uni_myn_sales.xlsx)'},
+  {key:'myntra_uni_return', label:'Myntra — Unicommerce returns (uni_myn_return.xlsx)'},
+  {key:'myntra_finance_report', label:'Myntra — finance/GST report (SellerYearMonthWeekKey_*.xlsx)'},
+  {key:'myntra_raw_sales', label:'Myntra — raw sales export (Myntra-Sales.csv)'},
+  {key:'myntra_raw_return', label:'Myntra — raw return export (Myntra-Return.csv)'},
+  {key:'myntra_raw_rto', label:'Myntra — raw RTO export (Myntra-RTO.csv)'},
+  {key:'amazon_mtr', label:'Amazon — MTR sales+return report (Amazon.xlsx)'},
+  {key:'amazon_settlement_xml', label:'Amazon — settlement XML files'},
+  {key:'amazon_settlement_tsv', label:'Amazon — settlement flat-file (.txt)'},
+  {key:'bank_statement_pdf', label:'Bank — HDFC statement PDF'},
+];
+function renderReconFilesFound(){
+  const el = document.getElementById('reconFilesFound');
+  if(!el) return;
+  const found = (DATA && DATA.reconciliation && DATA.reconciliation.files_found) || {};
+  const unclassified = (DATA && DATA.reconciliation && DATA.reconciliation.unclassified_reconciliation_files) || [];
+  let html = RECON_FILE_TYPES.map(t=>{
+    const files = found[t.key];
+    if(files && files.length){
+      return `<div><span style="color:var(--credit)">✓</span> ${t.label} — ${files.length} file${files.length!==1?'s':''}</div>`;
+    }
+    return `<div style="color:var(--text-3)"><span style="color:var(--debit)">✗</span> ${t.label} — not found</div>`;
+  }).join('');
+  if(unclassified.length){
+    html += `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)"><strong>Seen but not recognized</strong> (check filename matches an expected pattern above):<br>${unclassified.map(n=>`<span style="color:var(--gold)">${n}</span>`).join('<br>')}</div>`;
+  }
+  el.innerHTML = html || '—';
 }
 
 /* ============ PARTY / STATE FILTER (Overview, Sales, Sales Returns, Ads) ============ */
@@ -1004,14 +1049,53 @@ function reportTotal(kind, monthsSel){
   return s;
 }
 
-function getAdDefs(){
-  return {
-    'Meta/Facebook': codesByNameContains('FACEBOOK INDIA'),
-    'Target Ads': codesByNameContains('TARGET ADVERTISEMENT'),
-    'Dev Ads': codesByNameContains('DEV ADS'),
-    'General Ad Exp': codesByNameContains('ADVERTISEMENT EXP'),
-  };
+/* ============ AD SPEND (corrected) ============
+   Every ad platform bill posts as a DEBIT to the single ledger
+   "ADVERTISEMENT EXP", with the actual platform recorded as that
+   transaction's `refcode` (counter-party) - e.g. code='ADVERTISEMENT EXP',
+   refcode='MYNTRA DESIGNS PVT LTD'. This replaced an earlier approach
+   that summed the Facebook vendor ledger's OWN debit side directly -
+   confirmed wrong against real data: that vendor ledger is a payable
+   account where the real ad expense posts as a CREDIT (increasing what's
+   owed), mixed with its opening balance; its debit side is almost
+   entirely an unrelated TDS adjustment (₹8,358 vs real Meta spend of
+   ₹4,93,125 for the same period - a ~59x miss). The old "Target Ads"
+   bucket had the same problem from a different stale ledger, and doubled
+   up entries already counted inside ADVERTISEMENT EXP - together these
+   overstated total ad spend by about ₹32,000 in real data and made the
+   Meta/Myntra/Amazon split meaningless (almost everything landed in one
+   undifferentiated "General Ad Exp" bucket instead of being attributed
+   to the right platform). */
+const AD_SPEND_CODE = 'ADVERTISEMENT EXP';
+const AD_CHANNEL_KEYWORDS = {'Meta/Facebook':'FACEBOOK', 'Myntra':'MYNTRA', 'Amazon':'AMAZON'};
+function adSpendByChannel(monthsSel){
+  const monthSet = monthsSel && monthsSel.length ? new Set(monthsSel) : null;
+  const totals = {}, perMonth = {}, vendorsSeen = {};
+  ACTIVE_TRANSACTIONS.forEach(t=>{
+    if(t.code !== AD_SPEND_CODE) return;
+    if(isBalanceMarker(t)) return;
+    const m = t.date.slice(0,7);
+    if(monthSet && !monthSet.has(m)) return;
+    const vendor = t.refcode || '(No counter-party recorded)';
+    const vendorUpper = vendor.toUpperCase();
+    let channel = 'Other Ad Spend';
+    for(const [label,keyword] of Object.entries(AD_CHANNEL_KEYWORDS)){
+      if(vendorUpper.includes(keyword)){ channel = label; break; }
+    }
+    totals[channel] = (totals[channel]||0) + t.dr;
+    if(!perMonth[channel]) perMonth[channel] = {};
+    perMonth[channel][m] = (perMonth[channel][m]||0) + t.dr;
+    if(!vendorsSeen[channel]) vendorsSeen[channel] = new Set();
+    vendorsSeen[channel].add(vendor);
+  });
+  Object.keys(vendorsSeen).forEach(c=>vendorsSeen[c]=[...vendorsSeen[c]]);
+  return {totals, perMonth, vendorsSeen};
 }
+function adSpendForChannel(channelLabel, monthsSel){
+  const agg = adSpendByChannel(monthsSel);
+  return {total: agg.totals[channelLabel]||0, perMonth: agg.perMonth[channelLabel]||{}, vendors: agg.vendorsSeen[channelLabel]||[]};
+}
+
 function getGstDefs(){
   return {
     'CGST': codesByNameContains('CGST A/C'),
@@ -1255,7 +1339,7 @@ function renderAll(){
     months, bankLookup);
   destroyChart('bnk2');
   charts.bnk2 = makeClickableLine(document.getElementById('chartBankCum'), mLabels,
-    [{label:'Cumulative',data:months.map(m=>bankCum[m]||0),borderColor:GOLD,backgroundColor:'rgba(156,122,46,0.10)',fill:true,tension:0.3}],
+    [{label:'Cumulative',data:months.map(m=>bankCum[m]||0),borderColor:GOLD,backgroundColor:'rgba(122,31,46,0.10)',fill:true,tension:0.3}],
     months, {'Cumulative':bankCodes});
 }
 
@@ -1271,10 +1355,8 @@ function renderExpensesPage(monthsSel){
     ? (periodMonths.length===1 ? monthLabel(periodMonths[0]) : `${monthLabel(periodMonths[0])} – ${monthLabel(periodMonths[periodMonths.length-1])}`)
     : `${monthLabel(months[0])} – ${monthLabel(months[months.length-1])}`;
 
-  const adCodesFlat = Object.values(getAdDefs()).flat();
-  const adSet = new Set(adCodesFlat);
   const expenseCodesRaw = codesByAtype('4');
-  const expenseCodes = expenseCodesRaw.filter(c=>!adSet.has(c));
+  const expenseCodes = expenseCodesRaw.filter(c=>c!==AD_SPEND_CODE);
 
   const expByLedger = {};
   ACTIVE_TRANSACTIONS.forEach(t=>{
@@ -1375,10 +1457,11 @@ function renderAdsPage(monthsSel){
   const allSalesAgg = aggregateByRefcode(SALES_REFCODE, 'dr', monthsSel, null);
   const allSalesCodes = allSalesAgg.codesByGroup['_TOTAL_'] || [];
   const allSalesMonthly = aggregateByRefcode(SALES_REFCODE, 'dr', null, null);
-  const ads = getAdDefs();
-  const adNames = Object.keys(ads).filter(a=>ads[a].length);
-  const adTotals = adNames.map(a=>totalForPeriod(ads[a],'dr',monthsSel));
-  const totalAds = adNames.length ? totalForPeriod(adNames.flatMap(a=>ads[a]),'dr',monthsSel) : 0;
+  const adAgg = adSpendByChannel(monthsSel);
+  const adAggMonthly = adSpendByChannel(null);
+  const adNames = Object.keys(adAgg.totals);
+  const adTotals = adNames.map(a=>adAgg.totals[a]);
+  const totalAds = adNames.reduce((s,a)=>s+adAgg.totals[a],0);
   const totalRevenue = allSalesAgg.totals['_TOTAL_'] || 0;
 
   document.getElementById('adsKpi').innerHTML = `
@@ -1386,22 +1469,21 @@ function renderAdsPage(monthsSel){
     <div class="kpi-card"><div class="kpi-label">Of Sales</div><div class="kpi-value gold">${totalRevenue?(totalAds/totalRevenue*100).toFixed(1):'0'}%</div></div>
     <div class="kpi-card"><div class="kpi-label">Implied ROAS</div><div class="kpi-value credit">${totalAds?(totalRevenue/totalAds).toFixed(2):'—'}x</div></div>`;
   destroyChart('ads1');
-  const adLookup = {}; adNames.forEach(a=>adLookup[a]=ads[a]); adLookup['Total Sales']=allSalesCodes;
   charts.ads1 = new Chart(document.getElementById('chartAdsVsRev'),{
     type:'bar',
     data:{labels:mLabels,datasets:[
-      {type:'bar',label:'Ad Spend',data:periodMonths.map(m=>adNames.reduce((s,a)=>s+(sumSeries(ads[a],[m],'dr')[m]||0),0)),backgroundColor:DEBIT,borderRadius:3},
+      {type:'bar',label:'Ad Spend',data:periodMonths.map(m=>adNames.reduce((s,a)=>s+((adAggMonthly.perMonth[a]||{})[m]||0),0)),backgroundColor:DEBIT,borderRadius:3},
       {type:'line',label:'Total Sales',data:periodMonths.map(m=>(allSalesMonthly.perMonth['_TOTAL_']||{})[m]||0),borderColor:CREDIT,backgroundColor:'transparent',tension:0.3}
     ]},
     options:{responsive:true,maintainAspectRatio:false,
       onClick:(evt,elements,chart)=>{ if(elements.length){ const el=elements[0]; const label=chart.data.datasets[el.datasetIndex].label; const month=periodMonths[el.index];
-        const codes = label==='Ad Spend' ? adNames.flatMap(a=>ads[a]) : allSalesCodes;
+        const codes = label==='Ad Spend' ? [AD_SPEND_CODE] : allSalesCodes;
         openDrill(label, monthLabel(month), codes, month); } },
       plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:14,font:{size:11}}},tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmtSigned(c.raw)}`}}},
       scales:{y:{ticks:{callback:v=>'₹'+fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
   });
   destroyChart('ads2');
-  charts.ads2 = makeDoughnut(document.getElementById('chartAdsSplit'), adNames, adTotals, adNames.map(a=>ads[a]));
+  charts.ads2 = makeDoughnut(document.getElementById('chartAdsSplit'), adNames, adTotals, adNames.map(a=>[AD_SPEND_CODE]));
 }
 
 /* ============ GST (period-filterable) ============ */
@@ -1433,22 +1515,19 @@ function renderOverview(monthsSel){
 
   const byChannel = salesByChannel(monthsSel);
   const byChannelMonthly = salesByChannel(null);
-  const ads = getAdDefs();
   const bankCodes = codesByNameContains('HDFC BANK');
-  const adCodesFlat = Object.values(ads).flat();
-  const adSet = new Set(adCodesFlat);
   const expenseCodesRaw = [...new Set([...codesByAtype('4'), ...codesByAtype('10'), ...codesByAtype('8'), ...codesByAtype('3')])];
   const purchaseCodes = expenseCodesRaw.filter(c=>PURCHASE_GOODS_NAMES.has((LEDGER_MAP[c]?.name||'').trim()));
   const purchaseSet = new Set(purchaseCodes);
   const CONFOUNDED_NAMES = new Set(['PURCHASE (SERVICES)','PURCHASE (CAPTIAL GOODS/ASSETS)','INTEREST A/C PURCHASE']);
   const confoundedSet = new Set(expenseCodesRaw.filter(c=>CONFOUNDED_NAMES.has((LEDGER_MAP[c]?.name||'').trim())));
-  const expenseCodes = expenseCodesRaw.filter(c=>!adSet.has(c) && !purchaseSet.has(c) && !confoundedSet.has(c));
+  const expenseCodes = expenseCodesRaw.filter(c=>c!==AD_SPEND_CODE && !purchaseSet.has(c) && !confoundedSet.has(c));
   const vendorCodes = codesByAtype('113');
 
   const totalRevenue = Object.values(byChannel.totals).reduce((a,b)=>a+b,0);
   const byChannelReturns = salesReturnByChannel(monthsSel);
   const totalReturns = Math.abs(Object.values(byChannelReturns.totals).reduce((a,b)=>a+b,0));
-  const totalAds = adCodesFlat.length ? totalForPeriod(adCodesFlat,'dr',monthsSel) : 0;
+  const totalAds = Object.values(adSpendByChannel(monthsSel).totals).reduce((a,b)=>a+b,0);
   const totalPurchases = totalPurchasesForPeriod(monthsSel);
   const totalExpenses = totalForPeriod(expenseCodes,'dr',monthsSel) - totalForPeriod(expenseCodes,'cr',monthsSel);
   const netProfit = totalRevenue - totalReturns - totalExpenses - totalAds;
@@ -1526,7 +1605,7 @@ function renderOverview(monthsSel){
 
   destroyChart('ov2');
   charts.ov2 = makeClickableLine(document.getElementById('chartOverviewBank'), mLabels,
-    [{label:'Bank',data:periodMonths.map(m=>bankCumAll[m]||0),borderColor:GOLD,backgroundColor:'rgba(156,122,46,0.10)',fill:true,tension:0.3}],
+    [{label:'Bank',data:periodMonths.map(m=>bankCumAll[m]||0),borderColor:GOLD,backgroundColor:'rgba(122,31,46,0.10)',fill:true,tension:0.3}],
     periodMonths, {'Bank':bankCodes});
 }
 
@@ -1569,12 +1648,18 @@ function renderReconWebsite(monthsSel){
 
   const statusOrder = Object.keys(RECON_STATUS_META);
 
+  const metaAds = adSpendForChannel('Meta/Facebook', monthsSel);
+  const websiteSales = salesByChannel(monthsSel).totals['Website'] || 0;
+  const metaAdsPct = websiteSales ? (metaAds.total/websiteSales*100) : null;
+
   body.innerHTML = `
     <div class="kpi-grid">
       <div class="kpi-card"><div class="kpi-label">COD Orders — Paid</div><div class="kpi-value credit">${counts.paid||0}</div><div class="kpi-note">${fmtSigned(values.paid||0)}</div></div>
       <div class="kpi-card"><div class="kpi-label">COD Orders — Overdue (45d+)</div><div class="kpi-value debit">${counts.overdue_unpaid||0}</div><div class="kpi-note">${fmtSigned(values.overdue_unpaid||0)}</div></div>
       <div class="kpi-card"><div class="kpi-label">COD Orders — Pending</div><div class="kpi-value gold">${(counts.pending_normal||0)+(counts.pending_watch||0)}</div><div class="kpi-note">Within normal settlement lag</div></div>
       <div class="kpi-card"><div class="kpi-label">Prepaid cumulative gap</div><div class="kpi-value ${latestGap>0?'debit':'credit'}">${latestGap!=null?fmtSigned(latestGap):'—'}</div><div class="kpi-note">${anomalyDays} day(s) flagged outside tolerance</div></div>
+      <div class="kpi-card"><div class="kpi-label">Meta ad spend</div><div class="kpi-value debit">${fmtSigned(metaAds.total)}</div><div class="kpi-note">From ledger — ADVERTISEMENT EXP / Facebook India</div></div>
+      <div class="kpi-card"><div class="kpi-label">Ad spend as % of website sales</div><div class="kpi-value gold">${metaAdsPct!=null?metaAdsPct.toFixed(1)+'%':'—'}</div><div class="kpi-note">${fmtSigned(websiteSales)} website sales this period</div></div>
     </div>
     <div class="card">
       <div class="card-title">COD order status</div>
@@ -1614,7 +1699,7 @@ function renderReconWebsite(monthsSel){
       type:'line',
       data:{labels: prepaid.map(d=>d.date.slice(0,10)),
         datasets:[
-          {label:'Cumulative gap', data: prepaid.map(d=>d.cum_gap), borderColor:GOLD, backgroundColor:'rgba(156,122,46,0.10)', fill:true, tension:0.25, pointRadius: prepaid.map(d=>d.flag_anomaly?4:0), pointBackgroundColor:DEBIT},
+          {label:'Cumulative gap', data: prepaid.map(d=>d.cum_gap), borderColor:GOLD, backgroundColor:'rgba(122,31,46,0.10)', fill:true, tension:0.25, pointRadius: prepaid.map(d=>d.flag_anomaly?4:0), pointBackgroundColor:DEBIT},
         ]},
       options:{responsive:true,maintainAspectRatio:false,
         plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` Cumulative gap: ${fmtSigned(c.raw)}`}}},
@@ -1649,12 +1734,24 @@ function renderReconMyntra(monthsSel){
   const periodSettled = settledOrders.reduce((s,o)=>s+(o.settled_total||0),0);
   const periodCostPct = periodCustPaid ? (periodCustPaid-periodSettled)/periodCustPaid*100 : null;
 
+  const myntraAdsWhole = adSpendForChannel('Myntra', null);
+  const myntraAdsPeriod = adSpendForChannel('Myntra', monthsSel);
+  const totalCostPctWhole = cost.customer_paid_amount ? ((cost.cost_amount||0) + myntraAdsWhole.total) / cost.customer_paid_amount * 100 : null;
+  const totalCostPctPeriod = periodCustPaid ? ((periodCustPaid-periodSettled) + myntraAdsPeriod.total) / periodCustPaid * 100 : null;
+
   body.innerHTML = `
     <div class="kpi-grid">
       <div class="kpi-card"><div class="kpi-label">Order count match</div><div class="kpi-value">${oc.common||0} / ${oc.unicommerce_orders||0}</div><div class="kpi-note">Unicommerce orders also found in Myntra's report</div></div>
       <div class="kpi-card"><div class="kpi-label">Return count match (excl. RTO)</div><div class="kpi-value">${rc.common||0} / ${rc.unicommerce_returns||0}</div><div class="kpi-note">${rc.rto_expected_absent_from_finance_report||0} RTO orders correctly absent — see Myntra-RTO.csv instead</div></div>
-      <div class="kpi-card"><div class="kpi-label">Cost of doing business</div><div class="kpi-value debit">${cost.cost_pct!=null?cost.cost_pct.toFixed(2)+'%':'—'}</div><div class="kpi-note">Basis: Customer Paid Amount (= Unicommerce "Total")</div></div>
-      <div class="kpi-card"><div class="kpi-label">Selected-period cost %</div><div class="kpi-value gold">${periodCostPct!=null?periodCostPct.toFixed(2)+'%':'—'}</div><div class="kpi-note">${settledOrders.length} settled orders in this period</div></div>
+      <div class="kpi-card"><div class="kpi-label">Money received (whole dataset)</div><div class="kpi-value credit">${fmtSigned(cost.settled_amount||0)}</div><div class="kpi-note">Of ${fmtSigned(cost.customer_paid_amount||0)} customer paid</div></div>
+      <div class="kpi-card"><div class="kpi-label">Money received (this period)</div><div class="kpi-value credit">${fmtSigned(periodSettled)}</div><div class="kpi-note">${settledOrders.length} settled orders in this period</div></div>
+      <div class="kpi-card"><div class="kpi-label">Myntra ad spend (this period)</div><div class="kpi-value debit">${fmtSigned(myntraAdsPeriod.total)}</div><div class="kpi-note">From ledger — ADVERTISEMENT EXP / Myntra Designs Pvt Ltd</div></div>
+      <div class="kpi-card"><div class="kpi-label">Settlement-only cost %</div><div class="kpi-value debit">${cost.cost_pct!=null?cost.cost_pct.toFixed(2)+'%':'—'}</div><div class="kpi-note">Commission/logistics/fees, no ad spend</div></div>
+      <div class="kpi-card"><div class="kpi-label">Total cost of doing business (whole dataset)</div><div class="kpi-value debit">${totalCostPctWhole!=null?totalCostPctWhole.toFixed(2)+'%':'—'}</div><div class="kpi-note">Settlement deductions + ad spend</div></div>
+      <div class="kpi-card"><div class="kpi-label">Total cost of doing business (this period)</div><div class="kpi-value gold">${totalCostPctPeriod!=null?totalCostPctPeriod.toFixed(2)+'%':'—'}</div><div class="kpi-note">${settledOrders.length} settled orders in this period</div></div>
+    </div>
+    <div class="card" style="background:var(--surface-2)">
+      <p style="font-size:12px;color:var(--text-2);line-height:1.6">Ad spend is pulled from the ledger's <strong>ADVERTISEMENT EXP</strong> account, matched to whichever counter-party name contains "MYNTRA"${myntraAdsWhole.vendors.length?` (matched: ${myntraAdsWhole.vendors.join(', ')})`:' (no matching entries found yet)'}. Doesn't include Myntra's own Platform Fees/Commission entries also tracked in the ledger against the same vendor — those are the same fees already counted in the settlement-only cost % above, so adding them again here would double-count.</p>
     </div>
     <div class="card">
       <div class="card-title">Cost breakdown — % of Customer Paid Amount</div>
@@ -1663,6 +1760,7 @@ function renderReconMyntra(monthsSel){
         ${Object.entries(cost.breakdown||{}).map(([k,v])=>`<tr><td>${k.replace(/_/g,' ')}</td><td class="num">${fmt(v)}</td><td class="num">${cost.customer_paid_amount?(v/cost.customer_paid_amount*100).toFixed(2)+'%':'—'}</td></tr>`).join('')}
       </tbody></table>
     </div>
+
     <div class="card" style="background:var(--surface-2)">
       <div class="card-title">Data quality flags</div>
       <p style="font-size:12.5px;color:var(--text-2);line-height:1.7">
@@ -1700,13 +1798,21 @@ function renderReconAmazon(monthsSel){
   const cost = amazon.cost_of_business;
   const totalSettled = batches.reduce((s,b)=>s+(b.total_amount>0?b.total_amount:0),0);
   const negBatches = batches.filter(b=>b.total_amount<0).length;
+  const amazonAds = adSpendForChannel('Amazon', monthsSel);
+  const totalCostPct = (cost && cost.customer_paid_proxy) ? (((-cost.item_fees||0) + amazonAds.total) / cost.customer_paid_proxy * 100) : null;
 
   body.innerHTML = `
     <div class="kpi-grid">
       <div class="kpi-card"><div class="kpi-label">MTR orders matched to settlement</div><div class="kpi-value">${c.matched_to_settlement||0} / ${c.mtr_orders||0}</div><div class="kpi-note">Unmatched are usually pending settlement</div></div>
-      <div class="kpi-card"><div class="kpi-label">Settlement batches this period</div><div class="kpi-value">${batches.length}</div><div class="kpi-note">${negBatches} negative (carried forward, not debited)</div></div>
+      <div class="kpi-card"><div class="kpi-label">Settlement batches this period</div><div class="kpi-value">${batches.length}</div><div class="kpi-note">${negBatches} negative — see note below</div></div>
       <div class="kpi-card"><div class="kpi-label">Total settled</div><div class="kpi-value credit">${fmtSigned(totalSettled)}</div><div class="kpi-note">Positive settlements only</div></div>
-      <div class="kpi-card"><div class="kpi-label">Cost of doing business</div><div class="kpi-value debit">${cost && cost.cost_pct!=null?cost.cost_pct.toFixed(2)+'%':'—'}</div><div class="kpi-note">FBA fees + commission, flat-file stream</div></div>
+      <div class="kpi-card"><div class="kpi-label">Amazon ad spend (this period)</div><div class="kpi-value debit">${fmtSigned(amazonAds.total)}</div><div class="kpi-note">From ledger — ADVERTISEMENT EXP / Amazon Seller Services</div></div>
+      <div class="kpi-card"><div class="kpi-label">Settlement-only cost %</div><div class="kpi-value debit">${cost && cost.cost_pct!=null?cost.cost_pct.toFixed(2)+'%':'—'}</div><div class="kpi-note">FBA fees + commission only</div></div>
+      <div class="kpi-card"><div class="kpi-label">Total cost of doing business</div><div class="kpi-value gold">${totalCostPct!=null?totalCostPct.toFixed(2)+'%':'—'}</div><div class="kpi-note">Settlement deductions + ad spend, this period</div></div>
+    </div>
+    <div class="card" style="background:var(--surface-2)">
+      <p style="font-size:12px;color:var(--text-2);line-height:1.6"><strong>Why some batches are negative:</strong> Amazon nets fees (referral commission, FBA storage/pick-pack, refunds) against sales every settlement cycle. When fees in a cycle exceed sales collected, that batch settles negative — Amazon carries the shortfall forward and deducts it from your <em>next</em> positive settlement rather than debiting your bank account directly, which is why a negative row here never shows up as a withdrawal on the Bank Statement tab.<br><br>
+      <strong>On ad spend:</strong> checked your settlement data directly — Amazon Ads charges never appear as a line item across any of the settlement files, confirming it's paid separately and correctly pulled from the ledger's ADVERTISEMENT EXP account here${amazonAds.vendors.length?` (matched: ${amazonAds.vendors.join(', ')})`:' (no matching entries found yet)'}, not netted inside these batches.</p>
     </div>
     <div class="card">
       <div class="card-title">Settlement batches — deposit date vs amount</div>
@@ -1992,7 +2098,7 @@ function renderPeriodChips(kind){
   const wrap = document.getElementById('fs-chips-'+kind);
   if(!wrap) return;
   const chipHtml = (label, active, onclick, title) =>
-    `<span onclick="${onclick}" title="${title||''}" style="cursor:pointer;display:inline-flex;align-items:center;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;border:1px solid ${active?'rgba(156,122,46,0.3)':'var(--border)'};background:${active?'var(--gold-dim)':'var(--surface-2)'};color:${active?'var(--gold)':'var(--text-2)'}">${label}</span>`;
+    `<span onclick="${onclick}" title="${title||''}" style="cursor:pointer;display:inline-flex;align-items:center;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;border:1px solid ${active?'rgba(122,31,46,0.3)':'var(--border)'};background:${active?'var(--gold-dim)':'var(--surface-2)'};color:${active?'var(--gold)':'var(--text-2)'}">${label}</span>`;
 
   if(presetsWrap){
     const fyBuckets = computeFYBuckets();
