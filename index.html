@@ -253,6 +253,8 @@ html,body{overflow-x:hidden;max-width:100%}
     <button class="nav-item" onclick="switchTab('reconmyntra')"><span class="nav-dot"></span>Myntra</button>
     <button class="nav-item" onclick="switchTab('reconamazon')"><span class="nav-dot"></span>Amazon</button>
     <button class="nav-item" onclick="switchTab('reconbank')"><span class="nav-dot"></span>Bank Statement</button>
+    <span class="nav-label">Inventory</span>
+    <button class="nav-item" onclick="switchTab('inventory')"><span class="nav-dot"></span>Stock</button>
     <span class="nav-label">Build your own</span>
     <button class="nav-item" onclick="switchTab('reports')"><span class="nav-dot"></span>Report Builder</button>
     <span class="nav-label">System</span>
@@ -374,6 +376,16 @@ html,body{overflow-x:hidden;max-width:100%}
       <div id="reconBankBody"></div>
     </div>
 
+    <div id="tab-inventory" class="section">
+      <div class="page-header"><div class="page-title">Inventory</div><div class="page-sub" id="inventoryAsOf">—</div></div>
+      <div class="form-row" style="margin-bottom:16px">
+        <div class="form-group"><label class="form-label">Search by SKU number</label><input type="text" id="inv-search" placeholder="e.g. 0255" oninput="renderInventorySearch()"></div>
+      </div>
+      <div id="inv-search-results"></div>
+      <div id="inv-breadcrumb" style="margin-bottom:14px;font-size:12.5px;color:var(--text-2)"></div>
+      <div id="inventoryBody"></div>
+    </div>
+
     <div id="tab-reports" class="section">
       <div class="page-header"><div class="page-title">Report Builder</div><div class="page-sub">Pick any ledgers, any metric, any chart — build the comparison you actually want</div></div>
       <div class="card">
@@ -467,6 +479,7 @@ html,body{overflow-x:hidden;max-width:100%}
     <button class="mobile-nav-item" onclick="switchTab('reconmyntra');setMob(this)"><span class="mobile-glyph">RM</span>Recon Myn</button>
     <button class="mobile-nav-item" onclick="switchTab('reconamazon');setMob(this)"><span class="mobile-glyph">RA</span>Recon Amz</button>
     <button class="mobile-nav-item" onclick="switchTab('reconbank');setMob(this)"><span class="mobile-glyph">Bk</span>Bank Stmt</button>
+    <button class="mobile-nav-item" onclick="switchTab('inventory');setMob(this)"><span class="mobile-glyph">In</span>Inventory</button>
     <button class="mobile-nav-item" onclick="switchTab('reports');setMob(this)"><span class="mobile-glyph">Rp</span>Reports</button>
     <button class="mobile-nav-item" onclick="switchTab('settings');setMob(this)"><span class="mobile-glyph">St</span>Settings</button>
   </div>
@@ -592,6 +605,7 @@ function refreshEverything(){
   FIN_KINDS.forEach(renderFinancialStatement);
   renderLedgerSearch();
   renderSavedReports();
+  renderInventory();
 }
 
 /* ============ COMPANY FILTER ============ */
@@ -635,6 +649,7 @@ const RECON_FILE_TYPES = [
   {key:'amazon_settlement_xml', label:'Amazon — settlement XML files'},
   {key:'amazon_settlement_tsv', label:'Amazon — settlement flat-file (.txt)'},
   {key:'bank_statement_pdf', label:'Bank — HDFC statement PDF'},
+  {key:'inventory_snapshot', label:'Inventory — daily snapshot CSV'},
 ];
 function renderReconFilesFound(){
   const el = document.getElementById('reconFilesFound');
@@ -714,6 +729,7 @@ function switchTab(id){
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
   document.getElementById('tab-'+id).classList.add('active');
   if(['trialbalance','pnl','balancesheet','cashflow','reconwebsite','reconmyntra','reconamazon','reconbank'].includes(id) && DATA) renderFinancialStatement(id);
+  if(id==='inventory' && DATA) renderInventory();
   const partyBar = document.getElementById('partyFilterBar');
   if(partyBar) partyBar.style.display = ['overview','revenue','salesreturns','ads'].includes(id) ? 'block' : 'none';
 }
@@ -1919,6 +1935,169 @@ function renderReconBank(monthsSel){
     <div style="max-height:420px;overflow-y:auto"><table class="ldg-table"><thead><tr><th>Date</th><th>Narration</th><th>Ref. No.</th><th class="num">Withdrawal</th><th class="num">Deposit</th><th class="num">Balance</th><th>Matched</th></tr></thead><tbody>
       ${sortedTx.slice(0,400).map(t=>`<tr><td>${t.date?t.date.slice(0,10):'—'}</td><td style="font-size:11.5px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.narration||''}</td><td style="font-family:var(--mono);font-size:11px">${t.ref_no||''}</td><td class="num debit">${t.withdrawal?fmt(t.withdrawal):''}</td><td class="num credit">${t.deposit?fmt(t.deposit):''}</td><td class="num">${fmt(t.closing_balance||0)}</td><td>${t.deposit>0?`<span class="status-pill ${t.matched?'credit':'debit'}">${t.matched?'Matched':'Unmatched'}</span>`:''}</td></tr>`).join('')}
     </tbody></table></div>` : `<div class="empty-state"><p>No transactions in this slice</p></div>`;
+}
+
+/* ============ INVENTORY ============
+   Data source: DATA.reconciliation.inventory — { category_trend[] (one
+   entry per date x category, accumulated across every sync since Drive
+   only ever holds today's snapshot), latest_snapshot_date, latest_rows[]
+   (full SKU-level detail for the most recent snapshot only — category/
+   SKU/size drill-down is always "as of latest," not historical; only the
+   category totals are tracked over time). Three-level drill: category
+   (trend line + latest totals) -> SKU code within category (bar, summed
+   across sizes) -> size breakdown for that SKU (bar). */
+let invDrillCategory = null;
+let invDrillProductCode = null;
+function inventoryData(){ return (DATA && DATA.reconciliation && DATA.reconciliation.inventory) || {category_trend:[], latest_snapshot_date:null, latest_rows:[]}; }
+
+function renderInventoryBreadcrumb(){
+  const parts = [`<span style="cursor:pointer;color:var(--gold);font-weight:600" onclick="invDrillCategory=null;invDrillProductCode=null;renderInventory()">All categories</span>`];
+  if(invDrillCategory) parts.push(`<span style="cursor:pointer;color:${invDrillProductCode?'var(--gold)':'var(--text)'};font-weight:600" onclick="invDrillProductCode=null;renderInventory()">${invDrillCategory}</span>`);
+  if(invDrillProductCode) parts.push(`<span style="color:var(--text);font-weight:600">SKU ${invDrillProductCode}</span>`);
+  document.getElementById('inv-breadcrumb').innerHTML = parts.join(' <span style="color:var(--text-3)">›</span> ');
+}
+
+function renderInventory(){
+  const inv = inventoryData();
+  document.getElementById('inventoryAsOf').textContent = inv.latest_snapshot_date ? `As of ${inv.latest_snapshot_date}` : '—';
+  renderInventoryBreadcrumb();
+  const body = document.getElementById('inventoryBody');
+  if(!inv.latest_rows || !inv.latest_rows.length){
+    body.innerHTML = `<div class="empty-state"><div class="glyph">§</div><p>No inventory data loaded yet</p><small>The daily Inventory Snapshot relay hasn't dropped a file in Drive yet, or "Pull latest backup" hasn't run since it did</small></div>`;
+    return;
+  }
+  if(invDrillProductCode) renderInventorySizeLevel(inv);
+  else if(invDrillCategory) renderInventorySkuLevel(inv);
+  else renderInventoryCategoryLevel(inv);
+}
+
+function renderInventoryCategoryLevel(inv){
+  const body = document.getElementById('inventoryBody');
+  const dates = [...new Set(inv.category_trend.map(e=>e.date))].sort();
+  const categories = [...new Set(inv.category_trend.map(e=>e.category))].sort();
+  const latestByCategory = {};
+  categories.forEach(c=>{
+    const entry = inv.category_trend.filter(e=>e.category===c && e.date===inv.latest_snapshot_date)[0];
+    latestByCategory[c] = entry ? entry.qty : 0;
+  });
+  const totalQty = Object.values(latestByCategory).reduce((a,b)=>a+b,0);
+
+  body.innerHTML = `
+    <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+      <div class="kpi-card"><div class="kpi-label">Total pieces in stock</div><div class="kpi-value gold">${fmt(totalQty)}</div><div class="kpi-note">${categories.length} categories</div></div>
+      <div class="kpi-card"><div class="kpi-label">Snapshot days tracked</div><div class="kpi-value">${dates.length}</div><div class="kpi-note">${dates.length?dates[0]+' → '+dates[dates.length-1]:'—'}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Inventory by category — over time</div>
+      <div class="card-hint">${dates.length<2?'Only one day tracked so far — this fills in as daily snapshots accumulate':'Total pieces per category, per day'}</div>
+      <div class="chart-wrap tall" id="wrapInvTrend"><canvas id="chartInvTrend"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Category totals — latest snapshot</div>
+      <div class="card-hint">Click a bar to see that category's SKUs</div>
+      <div class="chart-wrap" id="wrapInvCatBar"><canvas id="chartInvCatBar"></canvas></div>
+    </div>`;
+
+  destroyChart('invTrend');
+  charts.invTrend = new Chart(document.getElementById('chartInvTrend'), {
+    type:'line',
+    data:{labels: dates.map(monthLabelDay), datasets: categories.map((c,i)=>({
+      label:c, data: dates.map(d=>{ const e=inv.category_trend.filter(e=>e.category===c && e.date===d)[0]; return e?e.qty:null; }),
+      borderColor:PALETTE[i%PALETTE.length], backgroundColor:'transparent', tension:0.25, spanGaps:true
+    }))},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:12,font:{size:10.5}}},
+        tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmt(c.raw)} pcs`}}},
+      scales:{y:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
+  });
+
+  destroyChart('invCatBar');
+  const sortedCats = categories.slice().sort((a,b)=>latestByCategory[b]-latestByCategory[a]);
+  charts.invCatBar = new Chart(document.getElementById('chartInvCatBar'), {
+    type:'bar',
+    data:{labels: sortedCats, datasets:[{data: sortedCats.map(c=>latestByCategory[c]), backgroundColor: sortedCats.map((c,i)=>PALETTE[i%PALETTE.length]), borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      onClick:(evt,elements)=>{ if(elements.length){ invDrillCategory = sortedCats[elements[0].index]; renderInventory(); } },
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} pcs · click for SKUs`}}},
+      scales:{y:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
+  });
+}
+
+function renderInventorySkuLevel(inv){
+  const body = document.getElementById('inventoryBody');
+  const rows = inv.latest_rows.filter(r=>r.category===invDrillCategory);
+  const bySku = {};
+  rows.forEach(r=>{ bySku[r.product_code] = (bySku[r.product_code]||0) + r.qty; });
+  const skus = Object.keys(bySku).sort((a,b)=>bySku[b]-bySku[a]);
+  const totalQty = Object.values(bySku).reduce((a,b)=>a+b,0);
+
+  body.innerHTML = `
+    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="kpi-card"><div class="kpi-label">${invDrillCategory} — total pieces</div><div class="kpi-value gold">${fmt(totalQty)}</div><div class="kpi-note">${skus.length} SKU codes</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">${invDrillCategory} — by SKU code</div>
+      <div class="card-hint">Click a bar to see the size breakdown</div>
+      <div class="chart-wrap tall" id="wrapInvSkuBar"><canvas id="chartInvSkuBar"></canvas></div>
+    </div>`;
+
+  destroyChart('invSkuBar');
+  charts.invSkuBar = makeHBar(document.getElementById('chartInvSkuBar'), skus, skus.map(s=>bySku[s]), GOLD, skus.map(s=>[s]),
+    (label) => { invDrillProductCode = label; renderInventory(); });
+}
+
+function renderInventorySizeLevel(inv){
+  const body = document.getElementById('inventoryBody');
+  const SIZE_ORDER = ['S','M','L','XL','XXL','3XL'];
+  const rows = inv.latest_rows.filter(r=>r.category===invDrillCategory && r.product_code===invDrillProductCode);
+  const bySize = {};
+  rows.forEach(r=>{ bySize[r.size] = (bySize[r.size]||0) + r.qty; });
+  const sizes = SIZE_ORDER.filter(s=>s in bySize);
+  const totalQty = Object.values(bySize).reduce((a,b)=>a+b,0);
+
+  body.innerHTML = `
+    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="kpi-card"><div class="kpi-label">SKU ${invDrillProductCode} — total pieces</div><div class="kpi-value gold">${fmt(totalQty)}</div><div class="kpi-note">${sizes.length} size(s) in stock</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">SKU ${invDrillProductCode} — by size</div>
+      <div class="chart-wrap" id="wrapInvSizeBar"><canvas id="chartInvSizeBar"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Full SKU detail</div>
+      <table class="ldg-table"><thead><tr><th>SKU</th><th>Size</th><th class="num">Qty</th></tr></thead><tbody>
+        ${rows.map(r=>`<tr><td style="font-family:var(--mono);font-size:11.5px">${r.sku}</td><td>${r.size}</td><td class="num">${fmt(r.qty)}</td></tr>`).join('')}
+      </tbody></table>
+    </div>`;
+
+  destroyChart('invSizeBar');
+  charts.invSizeBar = new Chart(document.getElementById('chartInvSizeBar'), {
+    type:'bar',
+    data:{labels: sizes, datasets:[{data: sizes.map(s=>bySize[s]), backgroundColor: CREDIT, borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} pcs`}}},
+      scales:{y:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
+  });
+}
+
+function monthLabelDay(dateStr){
+  const d = new Date(dateStr+'T00:00:00');
+  return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+}
+
+function renderInventorySearch(){
+  const q = (document.getElementById('inv-search').value||'').trim().toUpperCase();
+  const el = document.getElementById('inv-search-results');
+  if(!q){ el.innerHTML = ''; return; }
+  const inv = inventoryData();
+  const matches = (inv.latest_rows||[]).filter(r=>r.product_code.toUpperCase().includes(q) || r.sku.toUpperCase().includes(q)).slice(0,40);
+  el.innerHTML = matches.length ? `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">Search results (${matches.length})</div>
+      <table class="ldg-table"><thead><tr><th>SKU</th><th>Category</th><th>Size</th><th class="num">Qty</th></tr></thead><tbody>
+        ${matches.map(r=>`<tr onclick='invDrillCategory=${JSON.stringify(r.category)};invDrillProductCode=${JSON.stringify(r.product_code)};renderInventory();document.getElementById("inv-search").value="";document.getElementById("inv-search-results").innerHTML="";'><td style="font-family:var(--mono);font-size:11.5px">${r.sku}</td><td>${r.category}</td><td>${r.size}</td><td class="num">${fmt(r.qty)}</td></tr>`).join('')}
+      </tbody></table>
+    </div>` : `<div class="card" style="margin-bottom:16px;background:var(--surface-2)"><p style="font-size:12.5px;color:var(--text-2)">No SKU matches "${q}"</p></div>`;
 }
 
 /* ============ REPORT BUILDER ============ */
