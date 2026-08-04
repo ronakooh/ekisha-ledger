@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root{
@@ -510,6 +511,8 @@ const PALETTE=['#7a1f2e','#1f7a4d','#3c6e91','#a83f28','#7a5a9c','#3c9a94','#a86
 Chart.defaults.font.family="'Inter',sans-serif";
 Chart.defaults.color = TEXT2;
 Chart.defaults.borderColor = 'rgba(28,26,23,0.06)';
+Chart.register(ChartDataLabels);
+Chart.defaults.set('plugins.datalabels', { display: false }); // off everywhere by default — only charts that explicitly opt in (see inventory charts) show them
 
 /* ============ AUTH (Google Sign-In) ============ */
 function onSignIn(response){
@@ -2018,7 +2021,8 @@ function renderInventoryCategoryLevel(inv){
     data:{labels: sortedCats, datasets:[{data: sortedCats.map(c=>latestByCategory[c]), backgroundColor: sortedCats.map((c,i)=>PALETTE[i%PALETTE.length]), borderRadius:4}]},
     options:{responsive:true,maintainAspectRatio:false,
       onClick:(evt,elements)=>{ if(elements.length){ invDrillCategory = sortedCats[elements[0].index]; renderInventory(); } },
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} pcs · click for SKUs`}}},
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} pcs · click for SKUs`}},
+        datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:11},formatter:v=>fmt(v)}},
       scales:{y:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
   });
 }
@@ -2048,7 +2052,8 @@ function renderInventorySkuLevel(inv){
     data:{labels: skus, datasets:[{data: skus.map(s=>bySku[s]), backgroundColor: GOLD, borderRadius:4}]},
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
       onClick:(evt,elements)=>{ if(elements.length){ invDrillProductCode = skus[elements[0].index]; renderInventory(); } },
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} pcs · click for sizes`}}},
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} pcs · click for sizes`}},
+        datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:10.5},formatter:v=>fmt(v)}},
       scales:{x:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},y:{grid:{display:false}}}}
   });
 }
@@ -2082,7 +2087,8 @@ function renderInventorySizeLevel(inv){
     type:'bar',
     data:{labels: sizes, datasets:[{data: sizes.map(s=>bySize[s]), backgroundColor: CREDIT, borderRadius:4}]},
     options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} pcs`}}},
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} pcs`}},
+        datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:11},formatter:v=>fmt(v)}},
       scales:{y:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
   });
 }
