@@ -2030,6 +2030,7 @@ function renderInventorySkuLevel(inv){
   rows.forEach(r=>{ bySku[r.product_code] = (bySku[r.product_code]||0) + r.qty; });
   const skus = Object.keys(bySku).sort((a,b)=>bySku[b]-bySku[a]);
   const totalQty = Object.values(bySku).reduce((a,b)=>a+b,0);
+  const chartHeight = Math.max(skus.length * 26, 200);
 
   body.innerHTML = `
     <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
@@ -2037,13 +2038,19 @@ function renderInventorySkuLevel(inv){
     </div>
     <div class="card">
       <div class="card-title">${invDrillCategory} — by SKU code</div>
-      <div class="card-hint">Click a bar to see the size breakdown</div>
-      <div class="chart-wrap tall" id="wrapInvSkuBar"><canvas id="chartInvSkuBar"></canvas></div>
+      <div class="card-hint">Click a bar to see the size breakdown · scroll to see all ${skus.length} SKUs</div>
+      <div style="max-height:520px;overflow-y:auto" id="wrapInvSkuBar"><div style="height:${chartHeight}px"><canvas id="chartInvSkuBar"></canvas></div></div>
     </div>`;
 
   destroyChart('invSkuBar');
-  charts.invSkuBar = makeHBar(document.getElementById('chartInvSkuBar'), skus, skus.map(s=>bySku[s]), GOLD, skus.map(s=>[s]),
-    (label) => { invDrillProductCode = label; renderInventory(); });
+  charts.invSkuBar = new Chart(document.getElementById('chartInvSkuBar'), {
+    type:'bar',
+    data:{labels: skus, datasets:[{data: skus.map(s=>bySku[s]), backgroundColor: GOLD, borderRadius:4}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      onClick:(evt,elements)=>{ if(elements.length){ invDrillProductCode = skus[elements[0].index]; renderInventory(); } },
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} pcs · click for sizes`}}},
+      scales:{x:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},y:{grid:{display:false}}}}
+  });
 }
 
 function renderInventorySizeLevel(inv){
