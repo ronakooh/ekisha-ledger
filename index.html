@@ -257,6 +257,7 @@ html,body{overflow-x:hidden;max-width:100%}
     <span class="nav-label">Inventory</span>
     <button class="nav-item" onclick="switchTab('inventory')"><span class="nav-dot"></span>Stock</button>
     <button class="nav-item" onclick="switchTab('dispatch')"><span class="nav-dot"></span>Dispatch</button>
+    <button class="nav-item" onclick="switchTab('returns')"><span class="nav-dot"></span>Returns</button>
     <span class="nav-label">Build your own</span>
     <button class="nav-item" onclick="switchTab('reports')"><span class="nav-dot"></span>Report Builder</button>
     <span class="nav-label">System</span>
@@ -394,6 +395,17 @@ html,body{overflow-x:hidden;max-width:100%}
       <div id="dispatchBody"></div>
     </div>
 
+    <div id="tab-returns" class="section">
+      <div class="page-header"><div class="page-title">Returns</div><div class="page-sub" id="returnsAsOf">—</div></div>
+      <div class="page-header" style="margin-bottom:10px"><div class="page-title" style="font-size:18px">Expected Returns</div><div class="page-sub">In transit back — Shipping Package Status = RETURN_EXPECTED</div></div>
+      <div id="returns-expected-breadcrumb" style="margin-bottom:14px;font-size:12.5px;color:var(--text-2)"></div>
+      <div id="returnsExpectedBody"></div>
+      <div class="divider"></div>
+      <div class="page-header" style="margin-bottom:10px"><div class="page-title" style="font-size:18px">Processed Yesterday</div><div class="page-sub">Received and put away — filtered by Putaway Date</div></div>
+      <div id="returns-processed-breadcrumb" style="margin-bottom:14px;font-size:12.5px;color:var(--text-2)"></div>
+      <div id="returnsProcessedBody"></div>
+    </div>
+
     <div id="tab-reports" class="section">
       <div class="page-header"><div class="page-title">Report Builder</div><div class="page-sub">Pick any ledgers, any metric, any chart — build the comparison you actually want</div></div>
       <div class="card">
@@ -489,6 +501,7 @@ html,body{overflow-x:hidden;max-width:100%}
     <button class="mobile-nav-item" onclick="switchTab('reconbank');setMob(this)"><span class="mobile-glyph">Bk</span>Bank Stmt</button>
     <button class="mobile-nav-item" onclick="switchTab('inventory');setMob(this)"><span class="mobile-glyph">In</span>Inventory</button>
     <button class="mobile-nav-item" onclick="switchTab('dispatch');setMob(this)"><span class="mobile-glyph">Ds</span>Dispatch</button>
+    <button class="mobile-nav-item" onclick="switchTab('returns');setMob(this)"><span class="mobile-glyph">Rt</span>Returns</button>
     <button class="mobile-nav-item" onclick="switchTab('reports');setMob(this)"><span class="mobile-glyph">Rp</span>Reports</button>
     <button class="mobile-nav-item" onclick="switchTab('settings');setMob(this)"><span class="mobile-glyph">St</span>Settings</button>
   </div>
@@ -618,6 +631,7 @@ function refreshEverything(){
   renderSavedReports();
   renderInventory();
   renderDispatch();
+  renderReturns();
 }
 
 /* ============ COMPANY FILTER ============ */
@@ -663,6 +677,8 @@ const RECON_FILE_TYPES = [
   {key:'bank_statement_pdf', label:'Bank — HDFC statement PDF'},
   {key:'inventory_snapshot', label:'Inventory — daily snapshot CSV'},
   {key:'sale_orders_dispatch', label:'Dispatch — daily Sale Orders CSV'},
+  {key:'courier_returns', label:'Returns — daily Courier Returns CSV'},
+  {key:'putaway', label:'Returns — daily Putaway CSV'},
 ];
 function renderReconFilesFound(){
   const el = document.getElementById('reconFilesFound');
@@ -744,6 +760,7 @@ function switchTab(id){
   if(['trialbalance','pnl','balancesheet','cashflow','reconwebsite','reconmyntra','reconamazon','reconbank'].includes(id) && DATA) renderFinancialStatement(id);
   if(id==='inventory' && DATA) renderInventory();
   if(id==='dispatch' && DATA) renderDispatch();
+  if(id==='returns' && DATA) renderReturns();
   const partyBar = document.getElementById('partyFilterBar');
   if(partyBar) partyBar.style.display = ['overview','revenue','salesreturns','ads'].includes(id) ? 'block' : 'none';
 }
@@ -2161,6 +2178,9 @@ function renderDispatch(){
 
 function renderDispatchChannelLevel(rows){
   const body = document.getElementById('dispatchBody');
+  const trend = dispatchData().channel_trend || [];
+  const dates = [...new Set(trend.map(e=>e.date))].sort();
+  const trendChannels = [...new Set(trend.map(e=>e.channel))].sort();
   const byChannel = {};
   rows.forEach(r=>{ byChannel[r.channel] = (byChannel[r.channel]||0) + 1; });
   const channels = Object.keys(byChannel).sort((a,b)=>byChannel[b]-byChannel[a]);
@@ -2168,13 +2188,32 @@ function renderDispatchChannelLevel(rows){
 
   body.innerHTML = `
     <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
-      <div class="kpi-card"><div class="kpi-label">Total dispatched</div><div class="kpi-value gold">${fmt(totalQty)}</div><div class="kpi-note">${channels.length} channels</div></div>
+      <div class="kpi-card"><div class="kpi-label">Total dispatched (latest day)</div><div class="kpi-value gold">${fmt(totalQty)}</div><div class="kpi-note">${channels.length} channels</div></div>
+      <div class="kpi-card"><div class="kpi-label">Days tracked</div><div class="kpi-value">${dates.length}</div><div class="kpi-note">${dates.length?dates[0]+' → '+dates[dates.length-1]:'—'}</div></div>
     </div>
     <div class="card">
-      <div class="card-title">Dispatched — by channel</div>
+      <div class="card-title">Dispatched by channel — over time</div>
+      <div class="card-hint">${dates.length<2?'Only one day tracked so far — this fills in as daily snapshots accumulate':'Pieces dispatched per channel, per day'}</div>
+      <div class="chart-wrap tall" id="wrapDispatchTrend"><canvas id="chartDispatchTrend"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Dispatched — by channel (latest day)</div>
       <div class="card-hint">Click a bar to see that channel's SKUs</div>
       <div class="chart-wrap" id="wrapDispatchChannelBar"><canvas id="chartDispatchChannelBar"></canvas></div>
     </div>`;
+
+  destroyChart('dispatchTrend');
+  charts.dispatchTrend = new Chart(document.getElementById('chartDispatchTrend'), {
+    type:'line',
+    data:{labels: dates.map(monthLabelDay), datasets: trendChannels.map((c,i)=>({
+      label:c, data: dates.map(d=>{ const e=trend.filter(e=>e.channel===c && e.date===d)[0]; return e?e.qty:null; }),
+      borderColor:PALETTE[i%PALETTE.length], backgroundColor:'transparent', tension:0.25, spanGaps:true
+    }))},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:12,font:{size:10.5}}},
+        tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmt(c.raw)} pcs`}}},
+      scales:{y:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
+  });
 
   destroyChart('dispatchChannelBar');
   charts.dispatchChannelBar = new Chart(document.getElementById('chartDispatchChannelBar'), {
@@ -2245,6 +2284,151 @@ function renderDispatchSizeLevel(rows){
 
   destroyChart('dispatchSizeBar');
   charts.dispatchSizeBar = new Chart(document.getElementById('chartDispatchSizeBar'), {
+    type:'bar',
+    data:{labels: sizes, datasets:[{data: sizes.map(s=>bySize[s]), backgroundColor: CREDIT, borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} pcs`}},
+        datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:11},formatter:v=>fmt(v)}},
+      scales:{y:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
+  });
+}
+
+/* ============ RETURNS ============
+   Data source: DATA.reconciliation.returns — { expected_rows[] (status =
+   RETURN_EXPECTED, nothing received back yet so always Blank SKU),
+   processed_yesterday_rows[] (Courier Returns joined to Putaway by
+   Putaway No -> Putaway Code, recovering SKU/size where the batch has
+   already been putaway; anything unmatched or not yet putaway falls back
+   to a "Blank" SKU rather than being dropped), snapshot_date }. No
+   history tracked — always just the latest files' contents. Both
+   sections share the same three-level channel -> SKU -> size drill,
+   parameterized by section key so the two blocks have independent state. */
+const returnsDrillState = { expected: {channel:null, sku:null}, processed: {channel:null, sku:null} };
+function returnsData(){ return (DATA && DATA.reconciliation && DATA.reconciliation.returns) || {expected_rows:[], processed_yesterday_rows:[], snapshot_date:null}; }
+
+function renderReturns(){
+  const returns = returnsData();
+  const asOfEl = document.getElementById('returnsAsOf');
+  if(asOfEl) asOfEl.textContent = returns.snapshot_date ? `As of ${returns.snapshot_date}` : '—';
+  renderReturnsSection('expected', returns.expected_rows || [], 'No expected returns loaded yet');
+  renderReturnsSection('processed', returns.processed_yesterday_rows || [], 'No processed-returns data loaded yet');
+}
+
+function renderReturnsBreadcrumb(sectionKey){
+  const state = returnsDrillState[sectionKey];
+  const el = document.getElementById(`returns-${sectionKey}-breadcrumb`);
+  if(!el) return;
+  const parts = [`<span style="cursor:pointer;color:var(--gold);font-weight:600" onclick="returnsDrillState.${sectionKey}.channel=null;returnsDrillState.${sectionKey}.sku=null;renderReturns()">All channels</span>`];
+  if(state.channel) parts.push(`<span style="cursor:pointer;color:${state.sku?'var(--gold)':'var(--text)'};font-weight:600" onclick="returnsDrillState.${sectionKey}.sku=null;renderReturns()">${state.channel}</span>`);
+  if(state.sku) parts.push(`<span style="color:var(--text);font-weight:600">SKU ${state.sku}</span>`);
+  el.innerHTML = parts.join(' <span style="color:var(--text-3)">›</span> ');
+}
+
+function renderReturnsSection(sectionKey, rows, emptyMsg){
+  renderReturnsBreadcrumb(sectionKey);
+  const body = document.getElementById(`returns${sectionKey.charAt(0).toUpperCase()+sectionKey.slice(1)}Body`);
+  if(!body) return;
+  if(!rows.length){
+    body.innerHTML = `<div class="empty-state"><div class="glyph">§</div><p>${emptyMsg}</p><small>Upload Courier Returns (and Putaway, for SKU detail) to the Drive folder, then Pull latest backup</small></div>`;
+    return;
+  }
+  const state = returnsDrillState[sectionKey];
+  if(state.sku) renderReturnsSizeLevel(sectionKey, rows);
+  else if(state.channel) renderReturnsSkuLevel(sectionKey, rows);
+  else renderReturnsChannelLevel(sectionKey, rows);
+}
+
+function renderReturnsChannelLevel(sectionKey, rows){
+  const body = document.getElementById(`returns${sectionKey.charAt(0).toUpperCase()+sectionKey.slice(1)}Body`);
+  const byChannel = {};
+  rows.forEach(r=>{ byChannel[r.channel] = (byChannel[r.channel]||0) + r.qty; });
+  const channels = Object.keys(byChannel).sort((a,b)=>byChannel[b]-byChannel[a]);
+  const totalQty = Object.values(byChannel).reduce((a,b)=>a+b,0);
+  const chartId = `chartReturns${sectionKey}ChannelBar`;
+
+  body.innerHTML = `
+    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="kpi-card"><div class="kpi-label">Total pieces</div><div class="kpi-value gold">${fmt(totalQty)}</div><div class="kpi-note">${channels.length} channels</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">By channel</div>
+      <div class="card-hint">Click a bar to see that channel's SKUs</div>
+      <div class="chart-wrap" id="wrap${chartId}"><canvas id="${chartId}"></canvas></div>
+    </div>`;
+
+  destroyChart(chartId);
+  charts[chartId] = new Chart(document.getElementById(chartId), {
+    type:'bar',
+    data:{labels: channels, datasets:[{data: channels.map(c=>byChannel[c]), backgroundColor: channels.map((c,i)=>PALETTE[i%PALETTE.length]), borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      onClick:(evt,elements)=>{ if(elements.length){ returnsDrillState[sectionKey].channel = channels[elements[0].index]; renderReturns(); } },
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} pcs · click for SKUs`}},
+        datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:11},formatter:v=>fmt(v)}},
+      scales:{y:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
+  });
+}
+
+function renderReturnsSkuLevel(sectionKey, rows){
+  const state = returnsDrillState[sectionKey];
+  const body = document.getElementById(`returns${sectionKey.charAt(0).toUpperCase()+sectionKey.slice(1)}Body`);
+  const channelRows = rows.filter(r=>r.channel===state.channel);
+  const bySku = {};
+  channelRows.forEach(r=>{ bySku[r.product_code] = (bySku[r.product_code]||0) + r.qty; });
+  const skus = Object.keys(bySku).sort((a,b)=>bySku[b]-bySku[a]);
+  const totalQty = Object.values(bySku).reduce((a,b)=>a+b,0);
+  const chartHeight = Math.max(skus.length * 26, 200);
+  const chartId = `chartReturns${sectionKey}SkuBar`;
+
+  body.innerHTML = `
+    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="kpi-card"><div class="kpi-label">${state.channel} — total pieces</div><div class="kpi-value gold">${fmt(totalQty)}</div><div class="kpi-note">${skus.length} SKU codes</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">${state.channel} — by SKU code</div>
+      <div class="card-hint">Click a bar to see the size breakdown${skus.length>15?' · scroll to see all '+skus.length+' SKUs':''} · "Blank" means the SKU couldn't be identified for that return yet</div>
+      <div style="max-height:520px;overflow-y:auto" id="wrap${chartId}"><div style="height:${chartHeight}px"><canvas id="${chartId}"></canvas></div></div>
+    </div>`;
+
+  destroyChart(chartId);
+  charts[chartId] = new Chart(document.getElementById(chartId), {
+    type:'bar',
+    data:{labels: skus, datasets:[{data: skus.map(s=>bySku[s]), backgroundColor: skus.map(s=>s==='Blank'?'var(--text-3)':GOLD), borderRadius:4}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      onClick:(evt,elements)=>{ if(elements.length){ returnsDrillState[sectionKey].sku = skus[elements[0].index]; renderReturns(); } },
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} pcs · click for sizes`}},
+        datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:10.5},formatter:v=>fmt(v)}},
+      scales:{x:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},y:{grid:{display:false}}}}
+  });
+}
+
+function renderReturnsSizeLevel(sectionKey, rows){
+  const state = returnsDrillState[sectionKey];
+  const body = document.getElementById(`returns${sectionKey.charAt(0).toUpperCase()+sectionKey.slice(1)}Body`);
+  const SIZE_ORDER = ['S','M','L','XL','XXL','3XL'];
+  const skuRows = rows.filter(r=>r.channel===state.channel && r.product_code===state.sku);
+  const bySize = {};
+  skuRows.forEach(r=>{ const sz = r.size || '—'; bySize[sz] = (bySize[sz]||0) + r.qty; });
+  const sizes = state.sku==='Blank' ? Object.keys(bySize) : SIZE_ORDER.filter(s=>s in bySize);
+  const totalQty = Object.values(bySize).reduce((a,b)=>a+b,0);
+  const chartId = `chartReturns${sectionKey}SizeBar`;
+
+  body.innerHTML = `
+    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="kpi-card"><div class="kpi-label">SKU ${state.sku} — total pieces</div><div class="kpi-value gold">${fmt(totalQty)}</div><div class="kpi-note">${sizes.length} size(s)</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">SKU ${state.sku} — by size</div>
+      <div class="chart-wrap" id="wrap${chartId}"><canvas id="${chartId}"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Full return detail</div>
+      <table class="ldg-table"><thead><tr><th>Putaway No</th><th>Size</th><th class="num">Qty</th><th>Putaway date</th></tr></thead><tbody>
+        ${skuRows.map(r=>`<tr><td style="font-family:var(--mono);font-size:11.5px">${r.putaway_no||'—'}</td><td>${r.size||'—'}</td><td class="num">${fmt(r.qty)}</td><td style="font-family:var(--mono);font-size:11px">${r.putaway_date?r.putaway_date.slice(0,10):'—'}</td></tr>`).join('')}
+      </tbody></table>
+    </div>`;
+
+  destroyChart(chartId);
+  charts[chartId] = new Chart(document.getElementById(chartId), {
     type:'bar',
     data:{labels: sizes, datasets:[{data: sizes.map(s=>bySize[s]), backgroundColor: CREDIT, borderRadius:4}]},
     options:{responsive:true,maintainAspectRatio:false,
