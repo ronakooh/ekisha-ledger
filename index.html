@@ -2128,15 +2128,17 @@ function renderInventorySearch(){
    Data source: DATA.reconciliation.dispatch — { latest_rows[] } — always
    just the latest "Sale Orders" file's contents (no history tracked here,
    unlike inventory - confirmed the file itself is already scoped to
-   "yesterday's dispatched items," one row per unit). Two-level drill:
-   channel -> SKU code (summed across sizes, since only channel+SKU was
-   asked for here, not a size breakdown). */
+   "yesterday's dispatched items," one row per unit). Three-level drill:
+   channel -> SKU code (summed across sizes) -> size breakdown for that
+   SKU, same shape as the Inventory drill. */
 let dispatchDrillChannel = null;
+let dispatchDrillSku = null;
 function dispatchData(){ return (DATA && DATA.reconciliation && DATA.reconciliation.dispatch) || {latest_rows:[]}; }
 
 function renderDispatchBreadcrumb(){
-  const parts = [`<span style="cursor:pointer;color:var(--gold);font-weight:600" onclick="dispatchDrillChannel=null;renderDispatch()">All channels</span>`];
-  if(dispatchDrillChannel) parts.push(`<span style="color:var(--text);font-weight:600">${dispatchDrillChannel}</span>`);
+  const parts = [`<span style="cursor:pointer;color:var(--gold);font-weight:600" onclick="dispatchDrillChannel=null;dispatchDrillSku=null;renderDispatch()">All channels</span>`];
+  if(dispatchDrillChannel) parts.push(`<span style="cursor:pointer;color:${dispatchDrillSku?'var(--gold)':'var(--text)'};font-weight:600" onclick="dispatchDrillSku=null;renderDispatch()">${dispatchDrillChannel}</span>`);
+  if(dispatchDrillSku) parts.push(`<span style="color:var(--text);font-weight:600">SKU ${dispatchDrillSku}</span>`);
   document.getElementById('dispatch-breadcrumb').innerHTML = parts.join(' <span style="color:var(--text-3)">›</span> ');
 }
 
@@ -2152,7 +2154,8 @@ function renderDispatch(){
     body.innerHTML = `<div class="empty-state"><div class="glyph">§</div><p>No dispatch data loaded yet</p><small>The daily Sale Orders relay hasn't dropped a file in Drive yet, or "Pull latest backup" hasn't run since it did</small></div>`;
     return;
   }
-  if(dispatchDrillChannel) renderDispatchSkuLevel(rows);
+  if(dispatchDrillSku) renderDispatchSizeLevel(rows);
+  else if(dispatchDrillChannel) renderDispatchSkuLevel(rows);
   else renderDispatchChannelLevel(rows);
 }
 
@@ -2200,7 +2203,7 @@ function renderDispatchSkuLevel(rows){
     </div>
     <div class="card">
       <div class="card-title">${dispatchDrillChannel} — by SKU code</div>
-      <div class="card-hint">${skus.length>15?'Scroll to see all '+skus.length+' SKUs':''}</div>
+      <div class="card-hint">Click a bar to see the size breakdown${skus.length>15?' · scroll to see all '+skus.length+' SKUs':''}</div>
       <div style="max-height:520px;overflow-y:auto" id="wrapDispatchSkuBar"><div style="height:${chartHeight}px"><canvas id="chartDispatchSkuBar"></canvas></div></div>
     </div>`;
 
@@ -2209,9 +2212,45 @@ function renderDispatchSkuLevel(rows){
     type:'bar',
     data:{labels: skus, datasets:[{data: skus.map(s=>bySku[s]), backgroundColor: GOLD, borderRadius:4}]},
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} pcs`}},
+      onClick:(evt,elements)=>{ if(elements.length){ dispatchDrillSku = skus[elements[0].index]; renderDispatch(); } },
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} pcs · click for sizes`}},
         datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:10.5},formatter:v=>fmt(v)}},
       scales:{x:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},y:{grid:{display:false}}}}
+  });
+}
+
+function renderDispatchSizeLevel(rows){
+  const body = document.getElementById('dispatchBody');
+  const SIZE_ORDER = ['S','M','L','XL','XXL','3XL'];
+  const skuRows = rows.filter(r=>r.channel===dispatchDrillChannel && r.product_code===dispatchDrillSku);
+  const bySize = {};
+  skuRows.forEach(r=>{ bySize[r.size] = (bySize[r.size]||0) + 1; });
+  const sizes = SIZE_ORDER.filter(s=>s in bySize);
+  const totalQty = skuRows.length;
+
+  body.innerHTML = `
+    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="kpi-card"><div class="kpi-label">SKU ${dispatchDrillSku} — total dispatched</div><div class="kpi-value gold">${fmt(totalQty)}</div><div class="kpi-note">${sizes.length} size(s) dispatched</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">SKU ${dispatchDrillSku} — by size</div>
+      <div class="chart-wrap" id="wrapDispatchSizeBar"><canvas id="chartDispatchSizeBar"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Full dispatch detail</div>
+      <table class="ldg-table"><thead><tr><th>SKU</th><th>Size</th><th>Channel</th><th>Dispatch time</th></tr></thead><tbody>
+        ${skuRows.map(r=>`<tr><td style="font-family:var(--mono);font-size:11.5px">${r.sku}</td><td>${r.size}</td><td>${r.channel}</td><td style="font-family:var(--mono);font-size:11px">${r.dispatch_date}</td></tr>`).join('')}
+      </tbody></table>
+    </div>`;
+
+  destroyChart('dispatchSizeBar');
+  charts.dispatchSizeBar = new Chart(document.getElementById('chartDispatchSizeBar'), {
+    type:'bar',
+    data:{labels: sizes, datasets:[{data: sizes.map(s=>bySize[s]), backgroundColor: CREDIT, borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} pcs`}},
+        datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:11},formatter:v=>fmt(v)}},
+      scales:{y:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
   });
 }
 
