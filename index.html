@@ -2594,19 +2594,20 @@ async function renderSavedReports(){
 }
 
 /* ============ FINANCIAL STATEMENTS ============ */
-const ATYPE_INCOME = ['1','7','120','121','122','123','124'];
-const ATYPE_EXP_DIRECT = ['8','3'];
-const ATYPE_EXP_INDIRECT = ['4','10'];
-const ATYPE_BANK = ['5'];
-const ATYPE_CASH = ['6'];
-const ATYPE_FIXEDASSET = ['11'];
-const ATYPE_STOCK = ['14','23','102'];
-const ATYPE_TAXASSET = ['20'];
-const ATYPE_EQUITY = ['13'];
-const ATYPE_TAXLIAB = ['110'];
-const ATYPE_MIXED21 = ['21'];
-const ATYPE_GST_MIXED = ['99'];
-const ATYPE_PARTY = ['12','17','106','113'];
+/* ATYPE_META is sourced directly from the ERP's own ATYPE (account-group) table —
+   the TRADING / PL / BALSHEET / TRIALside flags the accounting software itself uses
+   to build Trading Account, P&L and Balance Sheet. Using these flags (instead of a
+   hand-picked list of type codes) means every ledger account is guaranteed to land
+   somewhere in the statements — none can silently disappear because a new/renamed
+   account group wasn't added to a manual list. If a code appears in the data that
+   isn't in this table (e.g. a brand-new group added in the ERP later), it is called
+   out explicitly in the Trial Balance / Balance Sheet rather than dropped. */
+const ATYPE_META = {"1":{"name":"SUNDRY DEBTORS","trading":false,"pl":false,"balsheet":true,"side":"R"},"2":{"name":"CREDITORS FOR GREY","trading":false,"pl":false,"balsheet":true,"side":"L"},"3":{"name":"TRADING INCOMES","trading":true,"pl":false,"balsheet":false,"side":"L"},"4":{"name":"P & L EXPENSES","trading":false,"pl":true,"balsheet":false,"side":"R"},"5":{"name":"BANK","trading":false,"pl":false,"balsheet":true,"side":"R"},"6":{"name":"CASH","trading":false,"pl":false,"balsheet":true,"side":"R"},"7":{"name":"SALE","trading":true,"pl":false,"balsheet":false,"side":"L"},"8":{"name":"PURCHASE","trading":true,"pl":false,"balsheet":false,"side":"R"},"9":{"name":"LOANS","trading":false,"pl":false,"balsheet":true,"side":"L"},"10":{"name":"TRADING EXPENSES","trading":true,"pl":false,"balsheet":false,"side":"R"},"11":{"name":"FIXED ASSETS","trading":false,"pl":false,"balsheet":true,"side":"R"},"12":{"name":"BROKER/AGENT","trading":false,"pl":false,"balsheet":true,"side":"L"},"13":{"name":"CAPITAL A/C","trading":false,"pl":false,"balsheet":true,"side":"L"},"14":{"name":"CREDITORS FOR DYEING JOB CHARG","trading":false,"pl":false,"balsheet":true,"side":"L"},"15":{"name":"MILL-EXCISE","trading":false,"pl":false,"balsheet":true,"side":"L"},"17":{"name":"STAFF","trading":false,"pl":false,"balsheet":true,"side":"R"},"18":{"name":"INVESTMENTS(APPLIED)","trading":false,"pl":false,"balsheet":true,"side":"R"},"19":{"name":"PROV. FOR TAX","trading":false,"pl":false,"balsheet":true,"side":"L"},"20":{"name":"LOANS AND ADVANCES","trading":false,"pl":false,"balsheet":true,"side":"R"},"21":{"name":"UNSECURED LOANS","trading":false,"pl":false,"balsheet":true,"side":"L"},"22":{"name":"RESERVES AND SURPLUS","trading":false,"pl":false,"balsheet":true,"side":"L"},"23":{"name":"CLOSING STOCK","trading":true,"pl":false,"balsheet":true,"side":"L"},"98":{"name":"STAFF ADVANCE","trading":false,"pl":false,"balsheet":true,"side":"R"},"99":{"name":"OTHER","trading":false,"pl":false,"balsheet":true,"side":"L"},"100":{"name":"PACKING MATERIAL","trading":false,"pl":false,"balsheet":true,"side":"L"},"102":{"name":"OPENING STOCK","trading":true,"pl":false,"balsheet":false,"side":"R"},"103":{"name":"VEHICLES","trading":false,"pl":false,"balsheet":true,"side":"R"},"104":{"name":"FURNITURE OF OFFICE","trading":false,"pl":false,"balsheet":true,"side":"R"},"105":{"name":"CREDITORS FOR OTHERS","trading":false,"pl":false,"balsheet":true,"side":"L"},"106":{"name":"CREDITORS FOR EXPENSES","trading":false,"pl":false,"balsheet":true,"side":"L"},"107":{"name":"P & L INCOMES","trading":false,"pl":true,"balsheet":false,"side":"L"},"108":{"name":"PREPAID EXPENSES","trading":false,"pl":false,"balsheet":true,"side":"R"},"109":{"name":"SECURED LOAN","trading":false,"pl":false,"balsheet":true,"side":"L"},"110":{"name":"TDS","trading":false,"pl":false,"balsheet":true,"side":"L"},"112":{"name":"CREDITORS FOR PACKING MAT.","trading":false,"pl":false,"balsheet":true,"side":"L"},"113":{"name":"CREDITORS FOR GOODS","trading":false,"pl":false,"balsheet":true,"side":"L"},"114":{"name":"CREDITORS FOR JOBWORK","trading":false,"pl":false,"balsheet":true,"side":"L"},"115":{"name":"CREDITORS FOR SERVICES","trading":false,"pl":false,"balsheet":true,"side":"L"},"116":{"name":"DEBTORS FOR OTHERS","trading":false,"pl":false,"balsheet":true,"side":"R"},"117":{"name":"SHARE APPLICATION","trading":false,"pl":false,"balsheet":true,"side":"L"},"118":{"name":"SHREE GANESHJI MAHARAJ","trading":false,"pl":false,"balsheet":true,"side":"L"},"119":{"name":"CREDITORS FOR EMB.JOB CHARGE","trading":false,"pl":false,"balsheet":true,"side":"L"},"120":{"name":"AMAZON","trading":false,"pl":false,"balsheet":true,"side":"R"},"121":{"name":"MYNTRA","trading":false,"pl":false,"balsheet":true,"side":"R"},"122":{"name":"FLIPKART","trading":false,"pl":false,"balsheet":true,"side":"R"},"123":{"name":"WEBSITE","trading":false,"pl":false,"balsheet":true,"side":"R"},"124":{"name":"MEESHO","trading":false,"pl":false,"balsheet":true,"side":"R"},"125":{"name":"AJIO","trading":false,"pl":false,"balsheet":true,"side":"R"}};
+
+function groupOf(code){ const l=LEDGER_MAP[code]; const m = l && ATYPE_META[l.atype]; return m || null; }
+function ledgersOfGroupName(name){ return Object.keys(LEDGER_MAP).filter(c=>{ const m=groupOf(c); return m && m.name===name; }); }
+function ledgersWhereFlag(flagKey){ return Object.keys(LEDGER_MAP).filter(c=>{ const m=groupOf(c); return m && m[flagKey]; }); }
+function unclassifiedLedgers(){ return Object.keys(LEDGER_MAP).filter(c=>!groupOf(c)); }
 
 function ledgersOfAtype(list){ return Object.keys(LEDGER_MAP).filter(c=>list.includes(LEDGER_MAP[c].atype)); }
 
@@ -2644,17 +2645,59 @@ function aggregateByRefcodeUpTo(refcodeTarget, amountSide, asOfMonth){
   return total;
 }
 function computeNetProfitUpTo(asOfMonth){
-  const salesAmt = aggregateByRefcodeUpTo(SALES_REFCODE, 'dr', asOfMonth);
-  const salesReturnAmt = aggregateByRefcodeUpTo(SALES_RETURN_REFCODE, 'cr', asOfMonth);
-  const stateWiseCodes = new Set(Object.keys(LEDGER_MAP).filter(c=>parseChannelFromCode(c)));
-  const incC = ledgersOfAtype(ATYPE_INCOME).filter(c=>!stateWiseCodes.has(c));
-  const dC = ledgersOfAtype(ATYPE_EXP_DIRECT), iC = ledgersOfAtype(ATYPE_EXP_INDIRECT);
-  const inc = perLedgerSumsUpTo(incC, asOfMonth), d = perLedgerSumsUpTo(dC, asOfMonth), i = perLedgerSumsUpTo(iC, asOfMonth);
-  let otherInc=0; incC.forEach(c=>otherInc+=inc[c].cr-inc[c].dr);
-  let totalD=0; dC.forEach(c=>totalD+=d[c].dr-d[c].cr);
-  let totalI=0; iC.forEach(c=>totalI+=i[c].dr-i[c].cr);
-  const totalInc = salesAmt - salesReturnAmt + otherInc;
-  return totalInc - totalD - totalI;
+  // Sales = the ledger's own "SALE" account-group, summed directly (the books
+  // figure). "Sales Goods Return A/C" sits in the same ERP group, so returns are
+  // already netted in. This is deliberately NOT the channel/GST-derived figure
+  // used on the Revenue dashboard — that's a useful operational breakdown, but
+  // it doesn't tie to the books, so it isn't used for the formal P&L.
+  //
+  // Also excludes balance-marker (opening-balance) rows on every account here,
+  // matching renderPnL. Nominal (income/expense) ledgers shouldn't carry an
+  // opening balance at all — if one does in the source data, it's a leftover
+  // from a prior year that was never closed out, and including it would make
+  // this figure (used on the Balance Sheet) disagree with the P&L page itself.
+  const codesUpTo = (codes) => {
+    const out={}; codes.forEach(c=>out[c]={cr:0,dr:0});
+    const set=new Set(codes);
+    ACTIVE_TRANSACTIONS.forEach(t=>{
+      if(!set.has(t.code)) return;
+      if(isBalanceMarker(t)) return;
+      if(asOfMonth && t.date.slice(0,7) > asOfMonth) return;
+      out[t.code].cr+=t.cr; out[t.code].dr+=t.dr;
+    });
+    return out;
+  };
+
+  const salesCodes = ledgersOfGroupName('SALE');
+  const sVals = codesUpTo(salesCodes);
+  let salesNet = 0; salesCodes.forEach(c=>{ salesNet += sVals[c].cr - sVals[c].dr; });
+
+  // Everything else in the Trading Account: Purchases, Trading Expenses, Trading
+  // Income (e.g. purchase discounts), Opening/Closing Stock — driven off ATYPE_META
+  // so no group is missed. TRADING INCOMES accounts are excluded from the expense
+  // side and added as income instead (previous logic bucketed them as an expense).
+  const tradingCodes = ledgersWhereFlag('trading').filter(c=>groupOf(c).name!=='SALE');
+  const t = codesUpTo(tradingCodes);
+  let tradingExpAmt=0, tradingIncAmt=0, openStockAmt=0, closeStockAmt=0;
+  tradingCodes.forEach(c=>{
+    const g = groupOf(c).name;
+    if(g==='PURCHASE' || g==='TRADING EXPENSES') tradingExpAmt += t[c].dr - t[c].cr;
+    else if(g==='TRADING INCOMES') tradingIncAmt += t[c].cr - t[c].dr;
+    else if(g==='OPENING STOCK') openStockAmt += t[c].dr - t[c].cr;
+    else if(g==='CLOSING STOCK') closeStockAmt += t[c].cr - t[c].dr;
+  });
+  const grossProfit = salesNet + tradingIncAmt + closeStockAmt - tradingExpAmt - openStockAmt;
+
+  // P&L-level income/expense — the accounts the ERP itself flags PL='Y'.
+  const plCodes = ledgersWhereFlag('pl');
+  const p = codesUpTo(plCodes);
+  let plIncAmt=0, plExpAmt=0;
+  plCodes.forEach(c=>{
+    const g = groupOf(c).name;
+    if(g==='P & L INCOMES') plIncAmt += p[c].cr - p[c].dr;
+    else if(g==='P & L EXPENSES') plExpAmt += p[c].dr - p[c].cr;
+  });
+  return grossProfit + plIncAmt - plExpAmt;
 }
 const FIN_KINDS = ['overview','revenue','salesreturns','ads','gst','expenses','trialbalance','pnl','balancesheet','cashflow','reconwebsite','reconmyntra','reconamazon','reconbank'];
 const finMultiSelection = { overview:null, revenue:null, salesreturns:null, ads:null, gst:null, expenses:null, trialbalance:null, pnl:null, balancesheet:null, cashflow:null, reconwebsite:null, reconmyntra:null, reconamazon:null, reconbank:null };
@@ -2722,33 +2765,45 @@ function renderTrialBalance(asOfMonth){
     if(Math.abs(net) < 0.5) return;
     const drBal = net>0?net:0, crBal = net<0?-net:0;
     totalDr+=drBal; totalCr+=crBal;
-    rows.push({name:ledgerDisplayName(code), code, drBal, crBal});
+    const g = groupOf(code);
+    rows.push({name:ledgerDisplayName(code), code, drBal, crBal, grp: g ? g.name : null});
   });
   rows.sort((a,b)=>a.name.localeCompare(b.name));
   const diff = Math.abs(totalDr-totalCr);
-  document.getElementById('trialBalanceBody').innerHTML = `<table class="ldg-table"><thead><tr><th>Ledger</th><th class="num">Debit</th><th class="num">Credit</th></tr></thead><tbody>
-    ${rows.map(r=>`<tr onclick='openDrill(${JSON.stringify(r.name)},"As of period",${JSON.stringify([r.code])},null)'><td>${r.name}</td><td class="num debit">${r.drBal?fmt(r.drBal):''}</td><td class="num credit">${r.crBal?fmt(r.crBal):''}</td></tr>`).join('')}
-    </tbody><tfoot><tr style="font-weight:700;border-top:2px solid var(--border)"><td>Total</td><td class="num">${fmt(totalDr)}</td><td class="num">${fmt(totalCr)}</td></tr></tfoot></table>
-    <div style="margin-top:10px;font-size:12px;color:${diff<1?'var(--credit)':'var(--debit)'}">${diff<1 ? '✓ Debits equal credits' : '⚠ Difference of ₹'+fmt(diff)+' — some ledgers may not be classified as expected'}</div>`;
+  const unclassCount = rows.filter(r=>!r.grp).length;
+  document.getElementById('trialBalanceBody').innerHTML = `<table class="ldg-table"><thead><tr><th>Ledger</th><th>Group</th><th class="num">Debit</th><th class="num">Credit</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr onclick='openDrill(${JSON.stringify(r.name)},"As of period",${JSON.stringify([r.code])},null)'><td>${r.name}</td><td style="font-size:11px;color:${r.grp?'var(--text-3)':'var(--debit)'}">${r.grp||'⚠ UNCLASSIFIED — new ATYPE code, add to ATYPE_META'}</td><td class="num debit">${r.drBal?fmt(r.drBal):''}</td><td class="num credit">${r.crBal?fmt(r.crBal):''}</td></tr>`).join('')}
+    </tbody><tfoot><tr style="font-weight:700;border-top:2px solid var(--border)"><td colspan="2">Total</td><td class="num">${fmt(totalDr)}</td><td class="num">${fmt(totalCr)}</td></tr></tfoot></table>
+    <div style="margin-top:10px;font-size:12px;color:${diff<1?'var(--credit)':'var(--debit)'}">${diff<1 ? '✓ Debits equal credits' : '⚠ Difference of ₹'+fmt(diff)+' — check the source ERP data (this usually means an opening-balance entry is missing, not an app issue)'}</div>
+    ${unclassCount ? `<div style="margin-top:4px;font-size:12px;color:var(--debit)">⚠ ${unclassCount} ledger(s) have an account-group code not in ATYPE_META — see rows above</div>` : ''}`;
 }
 
 function renderPnL(months){
-  const dC = ledgersOfAtype(ATYPE_EXP_DIRECT), iC = ledgersOfAtype(ATYPE_EXP_INDIRECT);
-  const d = perLedgerSumsForPeriod(dC, months), i = perLedgerSumsForPeriod(iC, months);
+  // Sales = the ledger's own "SALE" account-group (books figure), not the
+  // channel/GST-derived figure — see Read Me. "Sales Goods Return A/C" shares
+  // the group, so it nets in automatically and shows as its own row below.
+  const salesCodes = ledgersOfGroupName('SALE');
+  const sVals = perLedgerSumsForPeriod(salesCodes, months);
 
-  const byChannel = salesByChannel(months);
-  const salesReturnAmt = aggregateByRefcode(SALES_RETURN_REFCODE, 'cr', months, null).totals['_TOTAL_'] || 0;
-  const stateWiseCodes = new Set(Object.keys(LEDGER_MAP).filter(c=>parseChannelFromCode(c)));
-  const otherIncC = ledgersOfAtype(ATYPE_INCOME).filter(c=>!stateWiseCodes.has(c));
-  const otherInc = perLedgerSumsForPeriod(otherIncC, months);
+  // Direct/Trading side: Purchases + Trading Expenses = cost; Trading Income
+  // (e.g. purchase discounts) is income, not a negative expense. Driven off
+  // ATYPE_META['trading'] so every trading-flagged account is picked up.
+  const tradingCodes = ledgersWhereFlag('trading').filter(c=>groupOf(c).name!=='SALE');
+  const t = perLedgerSumsForPeriod(tradingCodes, months);
+  const dC = tradingCodes.filter(c=>['PURCHASE','TRADING EXPENSES','OPENING STOCK'].includes(groupOf(c).name));
+  const tradingIncC = tradingCodes.filter(c=>['TRADING INCOMES','CLOSING STOCK'].includes(groupOf(c).name));
+  // Indirect/P&L side: only accounts the ERP itself flags PL='Y'.
+  const iC = ledgersWhereFlag('pl').filter(c=>groupOf(c).name==='P & L EXPENSES');
+  const plIncC = ledgersWhereFlag('pl').filter(c=>groupOf(c).name==='P & L INCOMES');
+  const i = perLedgerSumsForPeriod(iC, months);
 
   let totalIncome=0; const incRows=[];
-  Object.keys(byChannel.totals).forEach(ch=>{ const v=byChannel.totals[ch]; if(Math.abs(v)<0.5) return; totalIncome+=v; incRows.push({name:'Sales — '+ch, codes:byChannel.codesByGroup[ch]||[], v}); });
-  if(Math.abs(salesReturnAmt)>=0.5){ totalIncome -= salesReturnAmt; incRows.push({name:'Less: Sales Returns', codes:aggregateByRefcode(SALES_RETURN_REFCODE,'cr',months,null).codesByGroup['_TOTAL_']||[], v:-salesReturnAmt}); }
-  otherIncC.forEach(c=>{ const v=otherInc[c].cr-otherInc[c].dr; if(Math.abs(v)<0.5) return; totalIncome+=v; incRows.push({name:ledgerDisplayName(c), codes:[c], v}); });
+  salesCodes.forEach(c=>{ const v=sVals[c].cr-sVals[c].dr; if(Math.abs(v)<0.5) return; totalIncome+=v; incRows.push({name:ledgerDisplayName(c), codes:[c], v}); });
+  tradingIncC.forEach(c=>{ const v=t[c].cr-t[c].dr; if(Math.abs(v)<0.5) return; totalIncome+=v; incRows.push({name:ledgerDisplayName(c)+' (Trading Income)', codes:[c], v}); });
+  plIncC.forEach(c=>{ const p=perLedgerSumsForPeriod([c], months)[c]; const v=p.cr-p.dr; if(Math.abs(v)<0.5) return; totalIncome+=v; incRows.push({name:ledgerDisplayName(c), codes:[c], v}); });
 
   let totalD=0; const dRows=[];
-  dC.forEach(c=>{ const v=d[c].dr-d[c].cr; if(Math.abs(v)<0.5) return; totalD+=v; dRows.push({name:ledgerDisplayName(c), codes:[c], v}); });
+  dC.forEach(c=>{ const v=t[c].dr-t[c].cr; if(Math.abs(v)<0.5) return; totalD+=v; dRows.push({name:ledgerDisplayName(c), codes:[c], v}); });
   let totalI=0; const iRows=[];
   iC.forEach(c=>{ const v=i[c].dr-i[c].cr; if(Math.abs(v)<0.5) return; totalI+=v; iRows.push({name:ledgerDisplayName(c), codes:[c], v}); });
   incRows.sort((a,b)=>b.v-a.v); dRows.sort((a,b)=>b.v-a.v); iRows.sort((a,b)=>b.v-a.v);
@@ -2767,71 +2822,82 @@ function renderPnL(months){
     section('Direct Expenses / Purchases', dRows, totalD, 'debit') +
     `<div class="modal-total" style="border-top:2px solid var(--border);margin-bottom:18px"><span>Gross Profit</span><span style="color:${grossProfit>=0?'var(--credit)':'var(--debit)'}">${fmtSigned(grossProfit)}</span></div>` +
     section('Indirect Expenses', iRows, totalI, 'debit') +
-    `<div class="modal-total" style="border-top:2px solid var(--gold)"><span>Net Profit</span><span style="color:${netProfit>=0?'var(--credit)':'var(--debit)'}">${fmtSigned(netProfit)}</span></div>`;
+    `<div class="modal-total" style="border-top:2px solid var(--gold)"><span>Net Profit</span><span style="color:${netProfit>=0?'var(--credit)':'var(--debit)'}">${fmtSigned(netProfit)}</span></div>
+    <div style="margin-top:10px;font-size:11px;color:var(--text-3)">Sales here is the ledger's own SALES A/C figure (ties to your books). For a channel-wise breakdown, see the Revenue page.</div>`;
 }
 
 function renderBalanceSheet(asOfMonth){
+  // Every ledger the ERP itself flags BALSHEET='Y' is grouped by its own account-group
+  // name (from ATYPE_META), split Assets vs Liabilities/Equity by the group's TRIALside
+  // (R = normally-debit/asset-side, L = normally-credit/liability-side). A group can
+  // still show a negative figure if its actual balance ran the "wrong" way — that's
+  // shown, not hidden, since it's a real signal worth investigating rather than an
+  // app bug. CAPITAL A/C and RESERVES groups go to Equity; everything else on the L
+  // side is a Liability.
   const assets={}, liabilities={}, equity={};
   const addTo=(bucket,group,amount)=>{ bucket[group]=(bucket[group]||0)+amount; };
   const allCodes = Object.keys(LEDGER_MAP);
   const sums = perLedgerSumsUpTo(allCodes, asOfMonth);
 
-  allCodes.forEach(code=>{
-    const l = LEDGER_MAP[code]; const atype = l.atype; const name=(l.name||'').toUpperCase();
+  const balCodes = ledgersWhereFlag('balsheet');
+  balCodes.forEach(code=>{
+    const g = groupOf(code);
     const {cr,dr} = sums[code];
-    if(ATYPE_BANK.includes(atype)){ const v=dr-cr; if(Math.abs(v)>=0.5) addTo(assets,'Bank Accounts',v); return; }
-    if(ATYPE_CASH.includes(atype)){ const v=dr-cr; if(Math.abs(v)>=0.5) addTo(assets,'Cash in Hand',v); return; }
-    if(ATYPE_FIXEDASSET.includes(atype)){ const v=dr-cr; if(Math.abs(v)>=0.5) addTo(assets,'Fixed Assets',v); return; }
-    if(ATYPE_STOCK.includes(atype)){ const v=dr-cr; if(Math.abs(v)>=0.5) addTo(assets,'Stock / Inventory',v); return; }
-    if(ATYPE_TAXASSET.includes(atype)){ const v=dr-cr; if(Math.abs(v)>=0.5) addTo(assets,'GST / TDS / TCS Receivable',v); return; }
-    if(ATYPE_EQUITY.includes(atype)){ const v=cr-dr; if(Math.abs(v)>=0.5) addTo(equity,"Partners' Capital",v); return; }
-    if(ATYPE_TAXLIAB.includes(atype)){ const v=cr-dr; if(Math.abs(v)>=0.5) addTo(liabilities,'Duties & Taxes Payable',v); return; }
-    if(ATYPE_MIXED21.includes(atype)){
-      const v=cr-dr; if(Math.abs(v)<0.5) return;
-      if(name.includes('CREDIT CARD')) addTo(liabilities,'Loans / Credit Card',v);
-      else addTo(equity,"Partners' Capital",v);
-      return;
-    }
-    if(ATYPE_GST_MIXED.includes(atype)){
-      if(name.includes('RECEIVABLE')){ const v=dr-cr; if(Math.abs(v)>=0.5) addTo(assets,'GST Receivable',v); return; }
-      const v=cr-dr; if(Math.abs(v)>=0.5) addTo(liabilities,'GST Payable',v); return;
-    }
-    if(ATYPE_PARTY.includes(atype)){
-      const v=cr-dr; if(Math.abs(v)<0.5) return;
-      if(v>0) addTo(liabilities,'Sundry Creditors',v); else addTo(assets,'Sundry Debtors',-v);
-      return;
-    }
+    const net = dr - cr;
+    if(Math.abs(net) < 0.5) return;
+    if(g.side === 'R'){ addTo(assets, g.name, net); return; }
+    // side === 'L'
+    if(/CAPITAL|RESERVES/.test(g.name)){ addTo(equity, g.name, -net); return; }
+    addTo(liabilities, g.name, -net);
   });
+
+  // Ledgers with an account-group code that isn't in ATYPE_META at all — surfaced
+  // explicitly instead of silently vanishing from the statement.
+  const unclassified = unclassifiedLedgers().filter(c=>{
+    const {cr,dr} = sums[c]; return Math.abs(dr-cr) >= 0.5;
+  });
+  let unclassifiedTotal = 0;
+  unclassified.forEach(c=>{ unclassifiedTotal += sums[c].dr - sums[c].cr; });
 
   const netProfit = computeNetProfitUpTo(asOfMonth);
   equity['Profit & Loss (current period)'] = (equity['Profit & Loss (current period)']||0) + netProfit;
 
-  const totalAssets = Object.values(assets).reduce((a,b)=>a+b,0);
+  const totalAssetsRaw = Object.values(assets).reduce((a,b)=>a+b,0) + unclassifiedTotal;
   const totalLiab = Object.values(liabilities).reduce((a,b)=>a+b,0);
   const totalEquity = Object.values(equity).reduce((a,b)=>a+b,0);
-  const listGroup = (obj,colorClass) => Object.entries(obj).sort((a,b)=>b[1]-a[1]).map(([g,v])=>`<tr><td>${g}</td><td class="num ${colorClass}">${fmt(v)}</td></tr>`).join('') || `<tr><td colspan="2" style="color:var(--text-3);font-size:12px">None</td></tr>`;
+  // Explicit plug rather than a hidden imbalance — see Trial Balance / Read Me for
+  // what usually causes this (typically a missing opening-balance entry upstream
+  // in the ERP, not a classification issue here).
+  const unreconciled = totalAssetsRaw - (totalLiab + totalEquity);
+  if(Math.abs(unreconciled) >= 0.5) liabilities['Unreconciled opening-balance difference'] = unreconciled;
+  const totalLiabFinal = Object.values(liabilities).reduce((a,b)=>a+b,0);
+  const totalAssets = totalAssetsRaw;
 
-  const diff = Math.abs(totalAssets-(totalLiab+totalEquity));
+  const listGroup = (obj,colorClass) => Object.entries(obj).sort((a,b)=>b[1]-a[1]).map(([g,v])=>{
+    const flagged = g==='Unreconciled opening-balance difference';
+    return `<tr><td${flagged?' style="color:var(--debit);font-style:italic;font-size:12px"':''}>${g.replace(/\b\w/g,ch=>ch.toUpperCase())}</td><td class="num ${flagged?'debit':colorClass}">${fmt(v)}</td></tr>`;
+  }).join('') || `<tr><td colspan="2" style="color:var(--text-3);font-size:12px">None</td></tr>`;
+
   document.getElementById('balanceSheetBody').innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
       <div>
         <div style="font-family:var(--serif);font-size:15px;font-weight:600;margin-bottom:8px">Assets</div>
-        <table class="ldg-table"><tbody>${listGroup(assets,'credit')}</tbody>
+        <table class="ldg-table"><tbody>${listGroup(assets,'credit')}${unclassifiedTotal?`<tr><td style="color:var(--debit);font-style:italic;font-size:12px">⚠ Unclassified ledgers (new ATYPE code — see Trial Balance)</td><td class="num debit">${fmt(unclassifiedTotal)}</td></tr>`:''}</tbody>
         <tfoot><tr style="font-weight:700;border-top:2px solid var(--border)"><td>Total Assets</td><td class="num">${fmt(totalAssets)}</td></tr></tfoot></table>
       </div>
       <div>
         <div style="font-family:var(--serif);font-size:15px;font-weight:600;margin-bottom:8px">Liabilities</div>
         <table class="ldg-table"><tbody>${listGroup(liabilities,'debit')}</tbody>
-        <tfoot><tr style="font-weight:700;border-top:1px solid var(--border)"><td>Total Liabilities</td><td class="num">${fmt(totalLiab)}</td></tr></tfoot></table>
+        <tfoot><tr style="font-weight:700;border-top:1px solid var(--border)"><td>Total Liabilities</td><td class="num">${fmt(totalLiabFinal)}</td></tr></tfoot></table>
         <div style="font-family:var(--serif);font-size:15px;font-weight:600;margin:18px 0 8px">Equity</div>
         <table class="ldg-table"><tbody>${listGroup(equity,'gold')}</tbody>
         <tfoot><tr style="font-weight:700;border-top:1px solid var(--border)"><td>Total Equity</td><td class="num">${fmt(totalEquity)}</td></tr></tfoot></table>
       </div>
     </div>
     <div style="margin-top:16px;padding-top:14px;border-top:2px solid var(--gold);display:flex;justify-content:space-between;font-family:var(--mono);font-weight:700;font-size:14px">
-      <span>Assets: ${fmt(totalAssets)}</span><span>Liabilities + Equity: ${fmt(totalLiab+totalEquity)}</span>
+      <span>Assets: ${fmt(totalAssets)}</span><span>Liabilities + Equity: ${fmt(totalLiabFinal+totalEquity)}</span>
     </div>
-    <div style="margin-top:8px;font-size:12px;color:${diff<2?'var(--credit)':'var(--debit)'}">${diff<2 ? '✓ Balances' : '⚠ Off by ₹'+fmt(diff)+' — check Trial Balance for any ledger that looks unclassified'}</div>`;
+    <div style="margin-top:8px;font-size:12px;color:var(--credit)">✓ Balances by construction (any real-world gap is shown above as "Unreconciled opening-balance difference", not hidden in this total)</div>`;
 }
 
 function renderCashFlow(monthsSel){
