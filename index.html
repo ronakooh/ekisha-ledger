@@ -248,7 +248,6 @@ html,body{overflow-x:hidden;max-width:100%}
     <button class="nav-item" onclick="switchTab('trialbalance')"><span class="nav-dot"></span>Trial Balance</button>
     <button class="nav-item" onclick="switchTab('pnl')"><span class="nav-dot"></span>Profit &amp; Loss</button>
     <button class="nav-item" onclick="switchTab('balancesheet')"><span class="nav-dot"></span>Balance Sheet</button>
-    <button class="nav-item" onclick="switchTab('cashflow')"><span class="nav-dot"></span>Cash Flow</button>
     <span class="nav-label">Reconciliation</span>
     <button class="nav-item" onclick="switchTab('reconwebsite')"><span class="nav-dot"></span>Website</button>
     <button class="nav-item" onclick="switchTab('reconmyntra')"><span class="nav-dot"></span>Myntra</button>
@@ -346,13 +345,6 @@ html,body{overflow-x:hidden;max-width:100%}
       <div class="page-header"><div class="page-title">Balance Sheet</div><div class="page-sub">Assets = Liabilities + Equity, as of a point in time</div></div>
       <div class="form-group" style="margin-bottom:6px"><label class="form-label">As of — pick a Financial Year, a quarter, individual months, or leave on Latest</label><div id="fs-presets-balancesheet" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div><div id="fs-chips-balancesheet" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
       <div class="card"><div id="balanceSheetBody"></div></div>
-    </div>
-
-    <div id="tab-cashflow" class="section">
-      <div class="page-header"><div class="page-title">Cash Flow</div><div class="page-sub">Net movement through Bank and Cash accounts</div></div>
-      <div class="card" style="background:var(--surface-2);margin-bottom:16px"><p style="font-size:12px;color:var(--text-2);line-height:1.6">This is a simplified cash summary (opening → net movement → closing), not a formal Operating/Investing/Financing statement — the underlying data doesn't reliably pair each voucher's two sides, so that split isn't shown here to avoid presenting a guess as fact.</p></div>
-      <div class="form-group" style="margin-bottom:14px"><label class="form-label">Period — pick a Financial Year, a quarter, individual months, or leave on Full Year</label><div id="fs-presets-cashflow" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div><div id="fs-chips-cashflow" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
-      <div class="card"><div id="cashFlowBody"></div></div>
     </div>
 
     <div id="tab-reconwebsite" class="section">
@@ -494,7 +486,6 @@ html,body{overflow-x:hidden;max-width:100%}
     <button class="mobile-nav-item" onclick="switchTab('trialbalance');setMob(this)"><span class="mobile-glyph">TB</span>Trial Bal.</button>
     <button class="mobile-nav-item" onclick="switchTab('pnl');setMob(this)"><span class="mobile-glyph">PL</span>P&amp;L</button>
     <button class="mobile-nav-item" onclick="switchTab('balancesheet');setMob(this)"><span class="mobile-glyph">BS</span>Bal. Sheet</button>
-    <button class="mobile-nav-item" onclick="switchTab('cashflow');setMob(this)"><span class="mobile-glyph">CF</span>Cash Flow</button>
     <button class="mobile-nav-item" onclick="switchTab('reconwebsite');setMob(this)"><span class="mobile-glyph">RW</span>Recon Web</button>
     <button class="mobile-nav-item" onclick="switchTab('reconmyntra');setMob(this)"><span class="mobile-glyph">RM</span>Recon Myn</button>
     <button class="mobile-nav-item" onclick="switchTab('reconamazon');setMob(this)"><span class="mobile-glyph">RA</span>Recon Amz</button>
@@ -758,7 +749,7 @@ function switchTab(id){
   document.querySelectorAll('.mobile-nav-item').forEach(n=>n.classList.toggle('active', tabIdFromOnclick(n)===id));
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
   document.getElementById('tab-'+id).classList.add('active');
-  if(['trialbalance','pnl','balancesheet','cashflow','reconwebsite','reconmyntra','reconamazon','reconbank'].includes(id) && DATA) renderFinancialStatement(id);
+  if(['trialbalance','pnl','balancesheet','reconwebsite','reconmyntra','reconamazon','reconbank'].includes(id) && DATA) renderFinancialStatement(id);
   if(id==='inventory' && DATA) renderInventory();
   if(id==='dispatch' && DATA) renderDispatch();
   if(id==='returns' && DATA) renderReturns();
@@ -2699,8 +2690,8 @@ function computeNetProfitUpTo(asOfMonth){
   });
   return grossProfit + plIncAmt - plExpAmt;
 }
-const FIN_KINDS = ['overview','revenue','salesreturns','ads','gst','expenses','trialbalance','pnl','balancesheet','cashflow','reconwebsite','reconmyntra','reconamazon','reconbank'];
-const finMultiSelection = { overview:null, revenue:null, salesreturns:null, ads:null, gst:null, expenses:null, trialbalance:null, pnl:null, balancesheet:null, cashflow:null, reconwebsite:null, reconmyntra:null, reconamazon:null, reconbank:null };
+const FIN_KINDS = ['overview','revenue','salesreturns','ads','gst','expenses','trialbalance','pnl','balancesheet','reconwebsite','reconmyntra','reconamazon','reconbank'];
+const finMultiSelection = { overview:null, revenue:null, salesreturns:null, ads:null, gst:null, expenses:null, trialbalance:null, pnl:null, balancesheet:null, reconwebsite:null, reconmyntra:null, reconamazon:null, reconbank:null };
 
 function renderPeriodChips(kind){
   const months = monthsInData();
@@ -2749,7 +2740,6 @@ function renderFinancialStatement(kind){
   else if(kind==='trialbalance'){ const m=selectedMonthsArr('trialbalance'); renderTrialBalance(m && m.length ? m[m.length-1] : null); }
   else if(kind==='balancesheet'){ const m=selectedMonthsArr('balancesheet'); renderBalanceSheet(m && m.length ? m[m.length-1] : null); }
   else if(kind==='pnl') renderPnL(selectedMonthsArr('pnl'));
-  else if(kind==='cashflow') renderCashFlow(selectedMonthsArr('cashflow'));
   else if(kind==='reconwebsite') renderReconWebsite(selectedMonthsArr('reconwebsite'));
   else if(kind==='reconmyntra') renderReconMyntra(selectedMonthsArr('reconmyntra'));
   else if(kind==='reconamazon') renderReconAmazon(selectedMonthsArr('reconamazon'));
@@ -2898,35 +2888,6 @@ function renderBalanceSheet(asOfMonth){
       <span>Assets: ${fmt(totalAssets)}</span><span>Liabilities + Equity: ${fmt(totalLiabFinal+totalEquity)}</span>
     </div>
     <div style="margin-top:8px;font-size:12px;color:var(--credit)">✓ Balances by construction (any real-world gap is shown above as "Unreconciled opening-balance difference", not hidden in this total)</div>`;
-}
-
-function renderCashFlow(monthsSel){
-  const bankCashCodes = ledgersOfAtype([...ATYPE_BANK, ...ATYPE_CASH]);
-  const set = new Set(bankCashCodes);
-  const months = monthsInData();
-  const chosen = monthsSel && monthsSel.length ? [...monthsSel].sort() : null;
-  const chosenSet = chosen ? new Set(chosen) : null;
-  const periodStart = chosen ? chosen[0] : months[0];
-  let openingBal = 0;
-  ACTIVE_TRANSACTIONS.forEach(t=>{ if(set.has(t.code) && t.date.slice(0,7) < periodStart) openingBal += (t.dr-t.cr); });
-  let netMove = 0;
-  ACTIVE_TRANSACTIONS.forEach(t=>{ if(!set.has(t.code)) return; const m=t.date.slice(0,7); if(chosenSet ? chosenSet.has(m) : true) netMove += (t.dr-t.cr); });
-  const closingBal = openingBal + netMove;
-  let running = 0;
-  const rowsHtml = months.map(m=>{
-    let net=0; ACTIVE_TRANSACTIONS.forEach(t=>{ if(set.has(t.code) && t.date.slice(0,7)===m) net+=(t.dr-t.cr); });
-    running += net;
-    const dim = chosenSet && !chosenSet.has(m) ? 'opacity:0.4' : '';
-    return `<tr style="${dim}" onclick='openDrill("Bank + Cash",${JSON.stringify(monthLabel(m))},${JSON.stringify(bankCashCodes)},"${m}")'><td>${monthLabel(m)}</td><td class="num ${net>=0?'credit':'debit'}">${fmtSigned(net)}</td><td class="num">${fmtSigned(running)}</td></tr>`;
-  }).join('');
-  document.getElementById('cashFlowBody').innerHTML = `
-    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px">
-      <div class="kpi-card"><div class="kpi-label">Opening${chosen?' (before selection)':''}</div><div class="kpi-value">${fmtSigned(openingBal)}</div></div>
-      <div class="kpi-card"><div class="kpi-label">Net Movement${chosen?' (selected months)':''}</div><div class="kpi-value ${netMove>=0?'credit':'debit'}">${fmtSigned(netMove)}</div></div>
-      <div class="kpi-card"><div class="kpi-label">Closing</div><div class="kpi-value gold">${fmtSigned(closingBal)}</div></div>
-    </div>
-    <div class="card-hint" style="margin-bottom:8px">${chosen ? 'Faded rows are outside your selected months — shown for context, not included in the totals above.' : 'Full-year monthly trend, cumulative running balance.'}</div>
-    <table class="ldg-table"><thead><tr><th>Month</th><th class="num">Net Movement</th><th class="num">Cumulative</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
 }
 </script>
 </body>
