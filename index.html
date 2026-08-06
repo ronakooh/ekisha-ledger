@@ -543,7 +543,7 @@ function onSignIn(response){
     document.getElementById('userChip').innerHTML = `<img src="${payload.picture}"><span>${payload.name}</span>`;
   }catch(e){}
   document.getElementById('signinScreen').style.display = 'none';
-  loadData(false);
+  loadData(true); // always pull fresh on open, not just whatever was last synced
 }
 
 window.addEventListener('load', () => {
