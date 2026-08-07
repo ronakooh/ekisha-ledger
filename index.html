@@ -248,7 +248,6 @@ html,body{overflow-x:hidden;max-width:100%}
     <button class="nav-item" onclick="switchTab('trialbalance')"><span class="nav-dot"></span>Trial Balance</button>
     <button class="nav-item" onclick="switchTab('pnl')"><span class="nav-dot"></span>Profit &amp; Loss</button>
     <button class="nav-item" onclick="switchTab('balancesheet')"><span class="nav-dot"></span>Balance Sheet</button>
-    <button class="nav-item" onclick="switchTab('cashflow')"><span class="nav-dot"></span>Cash Flow</button>
     <span class="nav-label">Reconciliation</span>
     <button class="nav-item" onclick="switchTab('reconwebsite')"><span class="nav-dot"></span>Website</button>
     <button class="nav-item" onclick="switchTab('reconmyntra')"><span class="nav-dot"></span>Myntra</button>
@@ -348,13 +347,6 @@ html,body{overflow-x:hidden;max-width:100%}
       <div class="card"><div id="balanceSheetBody"></div></div>
     </div>
 
-    <div id="tab-cashflow" class="section">
-      <div class="page-header"><div class="page-title">Cash Flow</div><div class="page-sub">Net movement through Bank and Cash accounts</div></div>
-      <div class="card" style="background:var(--surface-2);margin-bottom:16px"><p style="font-size:12px;color:var(--text-2);line-height:1.6">This is a simplified cash summary (opening → net movement → closing), not a formal Operating/Investing/Financing statement — the underlying data doesn't reliably pair each voucher's two sides, so that split isn't shown here to avoid presenting a guess as fact.</p></div>
-      <div class="form-group" style="margin-bottom:14px"><label class="form-label">Period — pick a Financial Year, a quarter, individual months, or leave on Full Year</label><div id="fs-presets-cashflow" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div><div id="fs-chips-cashflow" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
-      <div class="card"><div id="cashFlowBody"></div></div>
-    </div>
-
     <div id="tab-reconwebsite" class="section">
       <div class="page-header"><div class="page-title">Reconciliation — Website</div><div class="page-sub">Unicommerce sales/returns vs Shipway (COD) and Fastrr (Prepaid)</div></div>
       <div class="form-group" style="margin-bottom:16px"><label class="form-label">Period — pick a Financial Year, a quarter, individual months, or leave on Full Year</label><div id="fs-presets-reconwebsite" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div><div id="fs-chips-reconwebsite" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
@@ -452,6 +444,7 @@ html,body{overflow-x:hidden;max-width:100%}
         <div class="card-title">Reconciliation files found</div>
         <p style="font-size:12px;color:var(--text-3);margin-bottom:10px">Every reconciliation file type the last sync actually recognized in the Drive folder, and any files it saw but couldn't classify — the fastest way to tell "no data" tabs apart from "genuinely no files uploaded yet."</p>
         <div id="reconFilesFound" style="font-family:var(--mono);font-size:11.5px;background:var(--surface-2);border-radius:8px;padding:10px 12px;line-height:1.8">—</div>
+        <div id="sectionErrors" style="display:none;margin-top:12px;font-family:var(--mono);font-size:11.5px;background:var(--debit-dim, #fdecea);border:1px solid rgba(168,63,40,0.25);border-radius:8px;padding:10px 12px;line-height:1.6"></div>
       </div>
       <div class="card">
         <div class="card-title">Security status</div>
@@ -495,7 +488,6 @@ html,body{overflow-x:hidden;max-width:100%}
     <button class="mobile-nav-item" onclick="switchTab('trialbalance');setMob(this)"><span class="mobile-glyph">TB</span>Trial Bal.</button>
     <button class="mobile-nav-item" onclick="switchTab('pnl');setMob(this)"><span class="mobile-glyph">PL</span>P&amp;L</button>
     <button class="mobile-nav-item" onclick="switchTab('balancesheet');setMob(this)"><span class="mobile-glyph">BS</span>Bal. Sheet</button>
-    <button class="mobile-nav-item" onclick="switchTab('cashflow');setMob(this)"><span class="mobile-glyph">CF</span>Cash Flow</button>
     <button class="mobile-nav-item" onclick="switchTab('reconwebsite');setMob(this)"><span class="mobile-glyph">RW</span>Recon Web</button>
     <button class="mobile-nav-item" onclick="switchTab('reconmyntra');setMob(this)"><span class="mobile-glyph">RM</span>Recon Myn</button>
     <button class="mobile-nav-item" onclick="switchTab('reconamazon');setMob(this)"><span class="mobile-glyph">RA</span>Recon Amz</button>
@@ -694,6 +686,18 @@ function renderReconFilesFound(){
       cacheEl.textContent = '';
     }
   }
+  const secErrEl = document.getElementById('sectionErrors');
+  if(secErrEl){
+    const secErrors = (DATA && DATA.reconciliation && DATA.reconciliation.section_errors) || [];
+    if(secErrors.length){
+      secErrEl.style.display = '';
+      secErrEl.innerHTML = `<div style="font-weight:600;color:var(--debit);margin-bottom:6px">⚠ ${secErrors.length} reconciliation section${secErrors.length!==1?'s':''} failed this sync — everything else above still loaded normally</div>` +
+        secErrors.map(e=>`<details style="margin-bottom:8px"><summary style="cursor:pointer;color:var(--debit)"><strong>${e.section}</strong>: ${e.error}</summary><pre style="white-space:pre-wrap;font-size:10.5px;color:var(--text-3);margin-top:6px">${(e.traceback||'').replace(/</g,'&lt;')}</pre></details>`).join('');
+    } else {
+      secErrEl.style.display = 'none';
+      secErrEl.innerHTML = '';
+    }
+  }
   if(!el) return;
   const found = (DATA && DATA.reconciliation && DATA.reconciliation.files_found) || {};
   const unclassified = (DATA && DATA.reconciliation && DATA.reconciliation.unclassified_reconciliation_files) || [];
@@ -769,7 +773,7 @@ function switchTab(id){
   document.querySelectorAll('.mobile-nav-item').forEach(n=>n.classList.toggle('active', tabIdFromOnclick(n)===id));
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
   document.getElementById('tab-'+id).classList.add('active');
-  if(['trialbalance','pnl','balancesheet','cashflow','reconwebsite','reconmyntra','reconamazon','reconbank'].includes(id) && DATA) renderFinancialStatement(id);
+  if(['trialbalance','pnl','balancesheet','reconwebsite','reconmyntra','reconamazon','reconbank'].includes(id) && DATA) renderFinancialStatement(id);
   if(id==='inventory' && DATA) renderInventory();
   if(id==='dispatch' && DATA) renderDispatch();
   if(id==='returns' && DATA) renderReturns();
@@ -2710,8 +2714,8 @@ function computeNetProfitUpTo(asOfMonth){
   });
   return grossProfit + plIncAmt - plExpAmt;
 }
-const FIN_KINDS = ['overview','revenue','salesreturns','ads','gst','expenses','trialbalance','pnl','balancesheet','cashflow','reconwebsite','reconmyntra','reconamazon','reconbank'];
-const finMultiSelection = { overview:null, revenue:null, salesreturns:null, ads:null, gst:null, expenses:null, trialbalance:null, pnl:null, balancesheet:null, cashflow:null, reconwebsite:null, reconmyntra:null, reconamazon:null, reconbank:null };
+const FIN_KINDS = ['overview','revenue','salesreturns','ads','gst','expenses','trialbalance','pnl','balancesheet','reconwebsite','reconmyntra','reconamazon','reconbank'];
+const finMultiSelection = { overview:null, revenue:null, salesreturns:null, ads:null, gst:null, expenses:null, trialbalance:null, pnl:null, balancesheet:null, reconwebsite:null, reconmyntra:null, reconamazon:null, reconbank:null };
 
 function renderPeriodChips(kind){
   const months = monthsInData();
@@ -2760,7 +2764,6 @@ function renderFinancialStatement(kind){
   else if(kind==='trialbalance'){ const m=selectedMonthsArr('trialbalance'); renderTrialBalance(m && m.length ? m[m.length-1] : null); }
   else if(kind==='balancesheet'){ const m=selectedMonthsArr('balancesheet'); renderBalanceSheet(m && m.length ? m[m.length-1] : null); }
   else if(kind==='pnl') renderPnL(selectedMonthsArr('pnl'));
-  else if(kind==='cashflow') renderCashFlow(selectedMonthsArr('cashflow'));
   else if(kind==='reconwebsite') renderReconWebsite(selectedMonthsArr('reconwebsite'));
   else if(kind==='reconmyntra') renderReconMyntra(selectedMonthsArr('reconmyntra'));
   else if(kind==='reconamazon') renderReconAmazon(selectedMonthsArr('reconamazon'));
