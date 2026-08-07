@@ -692,7 +692,7 @@ function renderReconFilesFound(){
     if(secErrors.length){
       secErrEl.style.display = '';
       secErrEl.innerHTML = `<div style="font-weight:600;color:var(--debit);margin-bottom:6px">⚠ ${secErrors.length} reconciliation section${secErrors.length!==1?'s':''} failed this sync — everything else above still loaded normally</div>` +
-        secErrors.map(e=>`<details style="margin-bottom:8px"><summary style="cursor:pointer;color:var(--debit)"><strong>${e.section}</strong>: ${e.error}</summary><pre style="white-space:pre-wrap;font-size:10.5px;color:var(--text-3);margin-top:6px">${(e.traceback||'').replace(/</g,'&lt;')}</pre></details>`).join('');
+        secErrors.map(e=>`<details style="margin-bottom:8px"><summary style="cursor:pointer;color:var(--debit)"><strong>${e.section}</strong>: ${e.error}</summary>${(e.dataframe_state&&e.dataframe_state.length)?`<div style="margin-top:6px;color:var(--text-2)"><strong>DataFrame state at crash:</strong><br>${e.dataframe_state.map(s=>s.replace(/</g,'&lt;')).join('<br>')}</div>`:''}<pre style="white-space:pre-wrap;font-size:10.5px;color:var(--text-3);margin-top:6px">${(e.traceback||'').replace(/</g,'&lt;')}</pre></details>`).join('');
     } else {
       secErrEl.style.display = 'none';
       secErrEl.innerHTML = '';
