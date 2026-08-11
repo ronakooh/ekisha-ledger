@@ -389,6 +389,7 @@ html,body{overflow-x:hidden;max-width:100%}
 
     <div id="tab-returns" class="section">
       <div class="page-header"><div class="page-title">Returns</div><div class="page-sub" id="returnsAsOf">—</div></div>
+      <div id="returnsWarningBanner" style="display:none;margin-bottom:16px;padding:10px 14px;border-radius:8px;background:rgba(168,63,40,0.08);border:1px solid rgba(168,63,40,0.25);font-size:12.5px;color:var(--debit);line-height:1.5"></div>
       <div class="page-header" style="margin-bottom:10px"><div class="page-title" style="font-size:18px">Expected Returns</div><div class="page-sub">In transit back — Shipping Package Status = RETURN_EXPECTED</div></div>
       <div id="returns-expected-breadcrumb" style="margin-bottom:14px;font-size:12.5px;color:var(--text-2)"></div>
       <div id="returnsExpectedBody"></div>
@@ -1719,7 +1720,7 @@ function renderReconWebsite(monthsSel){
     <div class="kpi-grid">
       <div class="kpi-card"><div class="kpi-label">COD Orders — Paid</div><div class="kpi-value credit">${counts.paid||0}</div><div class="kpi-note">${fmtSigned(values.paid||0)}</div></div>
       <div class="kpi-card"><div class="kpi-label">COD Orders — Overdue (45d+)</div><div class="kpi-value debit">${counts.overdue_unpaid||0}</div><div class="kpi-note">${fmtSigned(values.overdue_unpaid||0)}</div></div>
-      <div class="kpi-card"><div class="kpi-label">COD Orders — Pending</div><div class="kpi-value gold">${(counts.pending_normal||0)+(counts.pending_watch||0)}</div><div class="kpi-note">Within normal settlement lag</div></div>
+      <div class="kpi-card"><div class="kpi-label">COD Orders — Pending</div><div class="kpi-value gold">${(counts.pending_normal||0)+(counts.pending_watch||0)}</div><div class="kpi-note">${fmtSigned((values.pending_normal||0)+(values.pending_watch||0))} · within normal settlement lag</div></div>
       <div class="kpi-card"><div class="kpi-label">Prepaid cumulative gap</div><div class="kpi-value ${latestGap>0?'debit':'credit'}">${latestGap!=null?fmtSigned(latestGap):'—'}</div><div class="kpi-note">${anomalyDays} day(s) flagged outside tolerance</div></div>
       <div class="kpi-card"><div class="kpi-label">Meta ad spend</div><div class="kpi-value debit">${fmtSigned(metaAds.total)}</div><div class="kpi-note">From ledger — ADVERTISEMENT EXP / Facebook India</div></div>
       <div class="kpi-card"><div class="kpi-label">Ad spend as % of website sales</div><div class="kpi-value gold">${metaAdsPct!=null?metaAdsPct.toFixed(1)+'%':'—'}</div><div class="kpi-note">${fmtSigned(websiteSales)} website sales this period</div></div>
@@ -2047,10 +2048,10 @@ function renderInventoryCategoryLevel(inv){
 
   destroyChart('invTrend');
   charts.invTrend = new Chart(document.getElementById('chartInvTrend'), {
-    type:'line',
-    data:{labels: dates.map(monthLabelDay), datasets: categories.map((c,i)=>({
-      label:c, data: dates.map(d=>{ const e=inv.category_trend.filter(e=>e.category===c && e.date===d)[0]; return e?e.qty:null; }),
-      borderColor:PALETTE[i%PALETTE.length], backgroundColor:'transparent', tension:0.25, spanGaps:true
+    type:'bar',
+    data:{labels: categories, datasets: dates.map((d,i)=>({
+      label:monthLabelDay(d), data: categories.map(c=>{ const e=inv.category_trend.filter(e=>e.category===c && e.date===d)[0]; return e?e.qty:0; }),
+      backgroundColor:PALETTE[i%PALETTE.length], borderRadius:3
     }))},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:12,font:{size:10.5}}},
@@ -2220,10 +2221,10 @@ function renderDispatchChannelLevel(rows){
 
   destroyChart('dispatchTrend');
   charts.dispatchTrend = new Chart(document.getElementById('chartDispatchTrend'), {
-    type:'line',
-    data:{labels: dates.map(monthLabelDay), datasets: trendChannels.map((c,i)=>({
-      label:c, data: dates.map(d=>{ const e=trend.filter(e=>e.channel===c && e.date===d)[0]; return e?e.qty:null; }),
-      borderColor:PALETTE[i%PALETTE.length], backgroundColor:'transparent', tension:0.25, spanGaps:true
+    type:'bar',
+    data:{labels: trendChannels, datasets: dates.map((d,i)=>({
+      label:monthLabelDay(d), data: trendChannels.map(c=>{ const e=trend.filter(e=>e.channel===c && e.date===d)[0]; return e?e.qty:0; }),
+      backgroundColor:PALETTE[i%PALETTE.length], borderRadius:3
     }))},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:12,font:{size:10.5}}},
@@ -2325,12 +2326,20 @@ function renderDispatchSizeLevel(rows){
    (Courier/Customer) -> SKU code, since Return Type is real data only
    the Tally report has. */
 let returnsExpectedDrillChannel = null;
-function returnsData(){ return (DATA && DATA.reconciliation && DATA.reconciliation.returns) || {expected_rows:[], processed_yesterday_rows:[], snapshot_date:null}; }
+function returnsData(){ return (DATA && DATA.reconciliation && DATA.reconciliation.returns) || {expected_rows:[], processed_yesterday_rows:[], snapshot_date:null, stale:false, tally_date_warning:null}; }
 
 function renderReturns(){
   const returns = returnsData();
   const asOfEl = document.getElementById('returnsAsOf');
   if(asOfEl) asOfEl.textContent = returns.snapshot_date ? `As of ${returns.snapshot_date}` : '—';
+  const warnEl = document.getElementById('returnsWarningBanner');
+  if(warnEl){
+    const msgs = [];
+    if(returns.stale) msgs.push(`⚠ This is the last data received — the daily returns email hasn't come in since ${returns.snapshot_date}. Numbers below are not from today.`);
+    if(returns.tally_date_warning) msgs.push(`⚠ ${returns.tally_date_warning}`);
+    if(msgs.length){ warnEl.style.display = ''; warnEl.innerHTML = msgs.join('<br>'); }
+    else { warnEl.style.display = 'none'; warnEl.innerHTML = ''; }
+  }
   renderReturnsExpected(returns.expected_rows || []);
   renderReturnsProcessed(returns.processed_yesterday_rows || []);
 }
