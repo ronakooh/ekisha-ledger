@@ -257,6 +257,7 @@ html,body{overflow-x:hidden;max-width:100%}
     <button class="nav-item" onclick="switchTab('inventory')"><span class="nav-dot"></span>Stock</button>
     <button class="nav-item" onclick="switchTab('dispatch')"><span class="nav-dot"></span>Dispatch</button>
     <button class="nav-item" onclick="switchTab('returns')"><span class="nav-dot"></span>Returns</button>
+    <button class="nav-item" onclick="switchTab('customers')"><span class="nav-dot"></span>Customers</button>
     <span class="nav-label">Build your own</span>
     <button class="nav-item" onclick="switchTab('reports')"><span class="nav-dot"></span>Report Builder</button>
     <span class="nav-label">System</span>
@@ -399,6 +400,17 @@ html,body{overflow-x:hidden;max-width:100%}
       <div id="returnsProcessedBody"></div>
     </div>
 
+    <div id="tab-customers" class="section">
+      <div class="page-header"><div class="page-title">Customers</div><div class="page-sub">Returning customers and geographic spread</div></div>
+      <div class="card" style="background:var(--surface-2);margin-bottom:16px">
+        <p style="font-size:12px;color:var(--text-2);line-height:1.6">Returning-customer tracking is set up on the Shopify side (a daily Flow emails new customers from yesterday's orders) but not yet wired into this app — that needs the actual email format confirmed before it can be parsed reliably. Orders by State below is live now, sourced from the Sale Orders export.</p>
+      </div>
+      <div id="customersReturningBody"></div>
+      <div class="divider"></div>
+      <div class="page-header" style="margin-bottom:10px"><div class="page-title" style="font-size:18px">Orders by State</div><div class="page-sub" id="customersStateAsOf">Accumulated from Dispatch data, per day tracked</div></div>
+      <div id="customersStateBody"></div>
+    </div>
+
     <div id="tab-reports" class="section">
       <div class="page-header"><div class="page-title">Report Builder</div><div class="page-sub">Pick any ledgers, any metric, any chart — build the comparison you actually want</div></div>
       <div class="card">
@@ -496,6 +508,7 @@ html,body{overflow-x:hidden;max-width:100%}
     <button class="mobile-nav-item" onclick="switchTab('inventory');setMob(this)"><span class="mobile-glyph">In</span>Inventory</button>
     <button class="mobile-nav-item" onclick="switchTab('dispatch');setMob(this)"><span class="mobile-glyph">Ds</span>Dispatch</button>
     <button class="mobile-nav-item" onclick="switchTab('returns');setMob(this)"><span class="mobile-glyph">Rt</span>Returns</button>
+    <button class="mobile-nav-item" onclick="switchTab('customers');setMob(this)"><span class="mobile-glyph">Cu</span>Customers</button>
     <button class="mobile-nav-item" onclick="switchTab('reports');setMob(this)"><span class="mobile-glyph">Rp</span>Reports</button>
     <button class="mobile-nav-item" onclick="switchTab('settings');setMob(this)"><span class="mobile-glyph">St</span>Settings</button>
   </div>
@@ -778,6 +791,7 @@ function switchTab(id){
   if(id==='inventory' && DATA) renderInventory();
   if(id==='dispatch' && DATA) renderDispatch();
   if(id==='returns' && DATA) renderReturns();
+  if(id==='customers' && DATA) renderCustomers();
   const partyBar = document.getElementById('partyFilterBar');
   if(partyBar) partyBar.style.display = ['overview','revenue','salesreturns','ads'].includes(id) ? 'block' : 'none';
 }
@@ -1692,7 +1706,7 @@ const RECON_STATUS_META = {
 };
 let reconWebsiteStatusFilter = null;
 
-function reconWebsiteData(){ return (DATA && DATA.reconciliation && DATA.reconciliation.website) || {cod_orders:[], prepaid_daily:[]}; }
+function reconWebsiteData(){ return (DATA && DATA.reconciliation && DATA.reconciliation.website) || {cod_orders:[], prepaid_daily:[], payment_split_rows:[]}; }
 function renderReconWebsite(monthsSel){
   const body = document.getElementById('reconWebsiteBody');
   const website = reconWebsiteData();
@@ -1731,6 +1745,11 @@ function renderReconWebsite(monthsSel){
       <div class="chart-wrap" id="wrapReconWebStatus"><canvas id="chartReconWebStatus"></canvas></div>
     </div>
     <div class="card">
+      <div class="card-title">COD vs Prepaid</div>
+      <div class="card-hint">Share of orders and share of sales value, by payment method — selected period</div>
+      <div class="chart-wrap" id="wrapReconWebPayment"><canvas id="chartReconWebPayment"></canvas></div>
+    </div>
+    <div class="card">
       <div class="card-title">Prepaid — cumulative sales vs Fastrr settlement</div>
       <div class="card-hint">No order-level prepaid payout data exists, so this is checked as a running total, not per-order. The last few days are normal settlement lag, not a gap.</div>
       <div class="chart-wrap" id="wrapReconWebPrepaid"><canvas id="chartReconWebPrepaid"></canvas></div>
@@ -1756,6 +1775,27 @@ function renderReconWebsite(monthsSel){
       plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.raw} order(s) · click to filter`}}},
       scales:{y:{ticks:{stepSize:1}},x:{grid:{display:false},ticks:{maxRotation:20,minRotation:20,font:{size:10}}}}}
   });
+
+  const paymentRows = (website.payment_split_rows || []).filter(r => !monthSet || (r.order_date && monthSet.has(r.order_date.slice(0,7))));
+  if(paymentRows.length){
+    const codCount = paymentRows.filter(r=>r.payment_method==='COD').length;
+    const prepaidCount = paymentRows.filter(r=>r.payment_method==='PREPAID').length;
+    const codValue = paymentRows.filter(r=>r.payment_method==='COD').reduce((s,r)=>s+(r.total||0),0);
+    const prepaidValue = paymentRows.filter(r=>r.payment_method==='PREPAID').reduce((s,r)=>s+(r.total||0),0);
+    const totalCount = codCount+prepaidCount, totalValue = codValue+prepaidValue;
+    destroyChart('reconWebPayment');
+    charts.reconWebPayment = new Chart(document.getElementById('chartReconWebPayment'), {
+      type:'bar',
+      data:{labels:['COD','Prepaid'], datasets:[
+        {label:'% of Orders', data:[totalCount?codCount/totalCount*100:0, totalCount?prepaidCount/totalCount*100:0], backgroundColor:GOLD, borderRadius:3},
+        {label:'% of Value', data:[totalValue?codValue/totalValue*100:0, totalValue?prepaidValue/totalValue*100:0], backgroundColor:PALETTE[2], borderRadius:3},
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:12,font:{size:10.5}}},
+          tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${c.raw.toFixed(1)}%`}}},
+        scales:{y:{max:100,ticks:{callback:v=>v+'%'},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
+    });
+  }
 
   if(prepaid.length){
     destroyChart('reconWebPrepaid');
@@ -2167,7 +2207,7 @@ function renderInventorySearch(){
    SKU, same shape as the Inventory drill. */
 let dispatchDrillChannel = null;
 let dispatchDrillSku = null;
-function dispatchData(){ return (DATA && DATA.reconciliation && DATA.reconciliation.dispatch) || {latest_rows:[]}; }
+function dispatchData(){ return (DATA && DATA.reconciliation && DATA.reconciliation.dispatch) || {latest_rows:[], channel_trend:[], value_trend:[], state_trend:[]}; }
 
 function renderDispatchBreadcrumb(){
   const parts = [`<span style="cursor:pointer;color:var(--gold);font-weight:600" onclick="dispatchDrillChannel=null;dispatchDrillSku=null;renderDispatch()">All channels</span>`];
@@ -2196,22 +2236,32 @@ function renderDispatch(){
 function renderDispatchChannelLevel(rows){
   const body = document.getElementById('dispatchBody');
   const trend = dispatchData().channel_trend || [];
+  const valueTrend = dispatchData().value_trend || [];
   const dates = [...new Set(trend.map(e=>e.date))].sort();
+  const valueDates = [...new Set(valueTrend.map(e=>e.date))].sort();
   const trendChannels = [...new Set(trend.map(e=>e.channel))].sort();
+  const valueChannels = [...new Set(valueTrend.map(e=>e.channel))].sort();
   const byChannel = {};
   rows.forEach(r=>{ byChannel[r.channel] = (byChannel[r.channel]||0) + 1; });
   const channels = Object.keys(byChannel).sort((a,b)=>byChannel[b]-byChannel[a]);
   const totalQty = rows.length;
+  const totalValue = rows.reduce((s,r)=>s+(r.selling_price||0),0);
 
   body.innerHTML = `
-    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+    <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
       <div class="kpi-card"><div class="kpi-label">Total dispatched (latest day)</div><div class="kpi-value gold">${fmt(totalQty)}</div><div class="kpi-note">${channels.length} channels</div></div>
+      <div class="kpi-card"><div class="kpi-label">Value dispatched (latest day)</div><div class="kpi-value gold">${fmtSigned(totalValue)}</div><div class="kpi-note">At selling price</div></div>
       <div class="kpi-card"><div class="kpi-label">Days tracked</div><div class="kpi-value">${dates.length}</div><div class="kpi-note">${dates.length?dates[0]+' → '+dates[dates.length-1]:'—'}</div></div>
     </div>
     <div class="card">
       <div class="card-title">Dispatched by channel — over time</div>
       <div class="card-hint">${dates.length<2?'Only one day tracked so far — this fills in as daily snapshots accumulate':'Pieces dispatched per channel, per day'}</div>
       <div class="chart-wrap tall" id="wrapDispatchTrend"><canvas id="chartDispatchTrend"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Dispatched value by channel — over time</div>
+      <div class="card-hint">${valueDates.length<2?'Only one day tracked so far — this fills in as daily snapshots accumulate':'Selling-price value dispatched per channel, per day'}</div>
+      <div class="chart-wrap tall" id="wrapDispatchValueTrend"><canvas id="chartDispatchValueTrend"></canvas></div>
     </div>
     <div class="card">
       <div class="card-title">Dispatched — by channel (latest day)</div>
@@ -2230,6 +2280,19 @@ function renderDispatchChannelLevel(rows){
       plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:12,font:{size:10.5}}},
         tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmt(c.raw)} pcs`}}},
       scales:{y:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
+  });
+
+  destroyChart('dispatchValueTrend');
+  charts.dispatchValueTrend = new Chart(document.getElementById('chartDispatchValueTrend'), {
+    type:'bar',
+    data:{labels: valueChannels, datasets: valueDates.map((d,i)=>({
+      label:monthLabelDay(d), data: valueChannels.map(c=>{ const e=valueTrend.filter(e=>e.channel===c && e.date===d)[0]; return e?e.value:0; }),
+      backgroundColor:PALETTE[i%PALETTE.length], borderRadius:3
+    }))},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:12,font:{size:10.5}}},
+        tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmtSigned(c.raw)}`}}},
+      scales:{y:{ticks:{callback:v=>fmtSigned(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
   });
 
   destroyChart('dispatchChannelBar');
@@ -2326,7 +2389,7 @@ function renderDispatchSizeLevel(rows){
    (Courier/Customer) -> SKU code, since Return Type is real data only
    the Tally report has. */
 let returnsExpectedDrillChannel = null;
-function returnsData(){ return (DATA && DATA.reconciliation && DATA.reconciliation.returns) || {expected_rows:[], processed_yesterday_rows:[], snapshot_date:null, stale:false, tally_date_warning:null}; }
+function returnsData(){ return (DATA && DATA.reconciliation && DATA.reconciliation.returns) || {expected_rows:[], processed_yesterday_rows:[], processed_value_by_channel:[], snapshot_date:null, stale:false, tally_date_warning:null}; }
 
 function renderReturns(){
   const returns = returnsData();
@@ -2424,16 +2487,25 @@ function renderReturnsProcessedChannelLevel(rows){
   rows.forEach(r=>{ byChannel[r.channel] = (byChannel[r.channel]||0) + r.qty; });
   const channels = Object.keys(byChannel).sort((a,b)=>byChannel[b]-byChannel[a]);
   const totalQty = Object.values(byChannel).reduce((a,b)=>a+b,0);
+  const valueByChannel = returnsData().processed_value_by_channel || [];
+  const valueChannels = valueByChannel.map(e=>e.channel);
+  const totalValue = valueByChannel.reduce((s,e)=>s+e.value,0);
 
   body.innerHTML = `
     <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
       <div class="kpi-card"><div class="kpi-label">Total pieces</div><div class="kpi-value gold">${fmt(totalQty)}</div><div class="kpi-note">${channels.length} channels</div></div>
+      <div class="kpi-card"><div class="kpi-label">Total value</div><div class="kpi-value gold">${fmtSigned(totalValue)}</div><div class="kpi-note">From Tally Return/GST report</div></div>
     </div>
     <div class="card">
       <div class="card-title">By channel</div>
       <div class="card-hint">Click a bar to see Courier vs Customer returns</div>
       <div class="chart-wrap" id="wrapReturnsProcessedChannelBar"><canvas id="chartReturnsProcessedChannelBar"></canvas></div>
-    </div>`;
+    </div>
+    ${valueByChannel.length ? `<div class="card">
+      <div class="card-title">Value by channel</div>
+      <div class="card-hint">Returns processed yesterday, at Tally's line-item Total</div>
+      <div class="chart-wrap" id="wrapReturnsProcessedValueBar"><canvas id="chartReturnsProcessedValueBar"></canvas></div>
+    </div>` : ''}`;
 
   destroyChart('returnsProcessedChannelBar');
   charts.returnsProcessedChannelBar = new Chart(document.getElementById('chartReturnsProcessedChannelBar'), {
@@ -2445,6 +2517,18 @@ function renderReturnsProcessedChannelLevel(rows){
         datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:11},formatter:v=>fmt(v)}},
       scales:{y:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
   });
+
+  if(valueByChannel.length){
+    destroyChart('returnsProcessedValueBar');
+    charts.returnsProcessedValueBar = new Chart(document.getElementById('chartReturnsProcessedValueBar'), {
+      type:'bar',
+      data:{labels: valueChannels, datasets:[{data: valueByChannel.map(e=>e.value), backgroundColor: valueChannels.map((c,i)=>PALETTE[i%PALETTE.length]), borderRadius:4}]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmtSigned(c.raw)}`}},
+          datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:11},formatter:v=>fmtSigned(v)}},
+        scales:{y:{ticks:{callback:v=>fmtSigned(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
+    });
+  }
 }
 
 function renderReturnsProcessedTypeLevel(rows){
@@ -2508,6 +2592,53 @@ function renderReturnsProcessedSkuLevel(rows){
     data:{labels: skus, datasets:[{data: skus.map(s=>bySku[s]), backgroundColor: GOLD, borderRadius:4}]},
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} pcs`}},
+        datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:10.5},formatter:v=>fmt(v)}},
+      scales:{x:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},y:{grid:{display:false}}}}
+  });
+}
+
+/* ============ CUSTOMERS ============
+   Data source: DATA.reconciliation.dispatch.state_trend[] (already
+   accumulated day-over-day, same mechanism as channel_trend/value_trend).
+   Returning-customer data isn't wired in yet - see the notice on the tab
+   itself for what's needed before that part can be built. */
+function renderCustomers(){
+  const returningBody = document.getElementById('customersReturningBody');
+  if(returningBody){
+    returningBody.innerHTML = `<div class="empty-state"><div class="glyph">§</div><p>Returning-customer tracking isn't connected yet</p><small>Once a sample of the Shopify Flow email is available, this will show % of customers who've ordered more than once, tracked day-over-day.</small></div>`;
+  }
+
+  const stateBody = document.getElementById('customersStateBody');
+  if(!stateBody) return;
+  const trend = dispatchData().state_trend || [];
+  if(!trend.length){
+    stateBody.innerHTML = `<div class="empty-state"><div class="glyph">§</div><p>No state data loaded yet</p><small>Comes from the daily Sale Orders export, same source as the Dispatch tab</small></div>`;
+    return;
+  }
+  const dates = [...new Set(trend.map(e=>e.date))].sort();
+  const totals = {};
+  trend.forEach(e=>{ totals[e.state] = (totals[e.state]||0) + e.qty; });
+  const states = Object.keys(totals).sort((a,b)=>totals[b]-totals[a]);
+  const grandTotal = Object.values(totals).reduce((a,b)=>a+b,0);
+  const chartHeight = Math.max(states.length * 26, 200);
+
+  stateBody.innerHTML = `
+    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="kpi-card"><div class="kpi-label">Total orders (all tracked days)</div><div class="kpi-value gold">${fmt(grandTotal)}</div><div class="kpi-note">${states.length} states</div></div>
+      <div class="kpi-card"><div class="kpi-label">Days tracked</div><div class="kpi-value">${dates.length}</div><div class="kpi-note">${dates.length?dates[0]+' → '+dates[dates.length-1]:'—'}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Orders by state</div>
+      <div class="card-hint">Cumulative across all days tracked so far</div>
+      <div style="max-height:560px;overflow-y:auto" id="wrapCustomersStateBar"><div style="height:${chartHeight}px"><canvas id="chartCustomersStateBar"></canvas></div></div>
+    </div>`;
+
+  destroyChart('customersStateBar');
+  charts.customersStateBar = new Chart(document.getElementById('chartCustomersStateBar'), {
+    type:'bar',
+    data:{labels: states, datasets:[{data: states.map(s=>totals[s]), backgroundColor: GOLD, borderRadius:4}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} order(s)`}},
         datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:10.5},formatter:v=>fmt(v)}},
       scales:{x:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},y:{grid:{display:false}}}}
   });
