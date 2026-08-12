@@ -139,6 +139,8 @@ select:focus,input[type=text]:focus{border-color:var(--gold)}
 .report-card-meta{font-size:10.5px;color:var(--text-3);margin-top:2px}
 .divider{height:1px;background:var(--border);margin:18px 0}
 .status-pill{display:inline-block;padding:3px 9px;border-radius:99px;font-size:10.5px;font-weight:600;white-space:nowrap}
+.btn-export{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text-2);font-size:11.5px;font-weight:600;cursor:pointer}
+.btn-export:hover{background:var(--surface-2);color:var(--text)}
 .status-pill.credit{background:var(--credit-dim);color:var(--credit)}
 .status-pill.debit{background:var(--debit-dim);color:var(--debit)}
 .status-pill.gold{background:var(--gold-dim);color:var(--gold)}
@@ -403,7 +405,7 @@ html,body{overflow-x:hidden;max-width:100%}
     <div id="tab-customers" class="section">
       <div class="page-header"><div class="page-title">Customers</div><div class="page-sub">Returning customers and geographic spread</div></div>
       <div class="card" style="background:var(--surface-2);margin-bottom:16px">
-        <p style="font-size:12px;color:var(--text-2);line-height:1.6">Returning-customer tracking is set up on the Shopify side (a daily Flow emails new customers from yesterday's orders) but not yet wired into this app — that needs the actual email format confirmed before it can be parsed reliably. Orders by State below is live now, sourced from the Sale Orders export.</p>
+        <p style="font-size:12px;color:var(--text-2);line-height:1.6">Returning-customer data comes from a daily Shopify Flow email, relayed into Drive and accumulated here permanently — a customer only counts as "returning" once Shopify's own lifetime order count says so. Orders by State is sourced from the Sale Orders export.</p>
       </div>
       <div id="customersReturningBody"></div>
       <div class="divider"></div>
@@ -1340,6 +1342,30 @@ function openDrillByVendor(code, vendor, categoryName){
 /* ============ CHART BUILDERS (all click-enabled) ============ */
 function destroyChart(id){ if(charts[id]){ charts[id].destroy(); delete charts[id]; } }
 
+/** Generic CSV export - takes an array of flat objects (exactly what
+ * every table render function already has in hand) and triggers a
+ * browser download. Column order follows the first row's own key order,
+ * so whatever the backend/JS already produces per row is what gets
+ * exported - no separate column-mapping to maintain per table. Values
+ * are CSV-escaped (quotes doubled, wrapped in quotes if they contain a
+ * comma/quote/newline) since names and narrations are free text. */
+function exportRowsToCsv(rows, filename){
+  if(!rows || !rows.length){ toast('Nothing to export', true); return; }
+  const headers = Object.keys(rows[0]);
+  const esc = v => {
+    if(v===null||v===undefined) return '';
+    v = String(v);
+    return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v;
+  };
+  const lines = [headers.join(',')].concat(rows.map(r=>headers.map(h=>esc(r[h])).join(',')));
+  const blob = new Blob([lines.join('\n')], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function onBarClick(evt, elements, chart, seriesCodesLookup, months, onItemClick){
   if(!elements.length) return;
   const el = elements[0];
@@ -1759,6 +1785,7 @@ function renderReconWebsite(monthsSel){
       <div class="status-filter-bar">
         <span class="status-pill ${!reconWebsiteStatusFilter?'gold':'neutral'}" style="cursor:pointer" onclick="reconWebsiteStatusFilter=null;renderReconWebsite(selectedMonthsArr('reconwebsite'))">All (${orders.length})</span>
         ${statusOrder.filter(k=>counts[k]).map(k=>`<span class="status-pill ${RECON_STATUS_META[k].cls}" style="cursor:pointer;${reconWebsiteStatusFilter===k?'outline:2px solid var(--gold)':''}" onclick="reconWebsiteStatusFilter='${k}';renderReconWebsite(selectedMonthsArr('reconwebsite'))">${RECON_STATUS_META[k].label} (${counts[k]})</span>`).join('')}
+        <button class="btn-export" onclick="exportRowsToCsv(${JSON.stringify(reconWebsiteStatusFilter ? orders.filter(o=>o.status===reconWebsiteStatusFilter) : orders).replace(/"/g,'&quot;')}, 'website_orders.csv')" style="margin-left:auto">⭳ Export CSV</button>
       </div>
       <div id="reconWebOrderTable"></div>
     </div>`;
@@ -1874,7 +1901,10 @@ function renderReconMyntra(monthsSel){
     </div>
     <div class="card">
       <div class="card-title">Order detail — this period</div>
-      <div class="card-hint">settled_total = Settled_Amount_Postpaid + Settled_Amount_Prepaid</div>
+      <div class="card-hint" style="display:flex;align-items:center">
+        <span>settled_total = Settled_Amount_Postpaid + Settled_Amount_Prepaid</span>
+        <button class="btn-export" onclick="exportRowsToCsv(${JSON.stringify(orders).replace(/"/g,'&quot;')}, 'myntra_orders.csv')" style="margin-left:auto">⭳ Export CSV</button>
+      </div>
       <div id="reconMyntraOrderTable"></div>
     </div>`;
 
@@ -1931,6 +1961,9 @@ function renderReconAmazon(monthsSel){
     </div>
     <div class="card">
       <div class="card-title">MTR orders — this period</div>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+        <button class="btn-export" onclick="exportRowsToCsv(${JSON.stringify(mtrOrders).replace(/"/g,'&quot;')}, 'amazon_mtr_orders.csv')">⭳ Export CSV</button>
+      </div>
       <div id="reconAmzOrderTable"></div>
     </div>`;
 
@@ -2010,6 +2043,9 @@ function renderReconBank(monthsSel){
     </div>
     <div class="card">
       <div class="card-title">All transactions — this period</div>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+        <button class="btn-export" onclick="exportRowsToCsv(${JSON.stringify(txs).replace(/"/g,'&quot;')}, 'bank_transactions.csv')">⭳ Export CSV</button>
+      </div>
       <div id="reconBankTxTable"></div>
     </div>`;
 
@@ -2265,7 +2301,10 @@ function renderDispatchChannelLevel(rows){
     </div>
     <div class="card">
       <div class="card-title">Dispatched — by channel (latest day)</div>
-      <div class="card-hint">Click a bar to see that channel's SKUs</div>
+      <div class="card-hint" style="display:flex;align-items:center">
+        <span>Click a bar to see that channel's SKUs</span>
+        <button class="btn-export" onclick="exportRowsToCsv(${JSON.stringify(rows).replace(/"/g,'&quot;')}, 'dispatch_latest_day.csv')" style="margin-left:auto">⭳ Export CSV</button>
+      </div>
       <div class="chart-wrap" id="wrapDispatchChannelBar"><canvas id="chartDispatchChannelBar"></canvas></div>
     </div>`;
 
@@ -2438,6 +2477,9 @@ function renderReturnsExpected(rows){
     </div>
     <div class="card">
       <div class="card-title">Order detail${returnsExpectedDrillChannel?' — '+returnsExpectedDrillChannel:''}</div>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+        <button class="btn-export" onclick="exportRowsToCsv(${JSON.stringify(displayRows).replace(/"/g,'&quot;')}, 'returns_expected.csv')">⭳ Export CSV</button>
+      </div>
       <div style="max-height:400px;overflow-y:auto"><table class="ldg-table"><thead><tr><th>Sale Order No</th><th>Channel</th></tr></thead><tbody>
         ${displayRows.slice(0,300).map(r=>`<tr><td style="font-family:var(--mono);font-size:11.5px">${r.sale_order_no}</td><td>${r.channel}</td></tr>`).join('')}
       </tbody></table></div>
@@ -2498,7 +2540,10 @@ function renderReturnsProcessedChannelLevel(rows){
     </div>
     <div class="card">
       <div class="card-title">By channel</div>
-      <div class="card-hint">Click a bar to see Courier vs Customer returns</div>
+      <div class="card-hint" style="display:flex;align-items:center">
+        <span>Click a bar to see Courier vs Customer returns</span>
+        <button class="btn-export" onclick="exportRowsToCsv(${JSON.stringify(rows).replace(/"/g,'&quot;')}, 'returns_processed.csv')" style="margin-left:auto">⭳ Export CSV</button>
+      </div>
       <div class="chart-wrap" id="wrapReturnsProcessedChannelBar"><canvas id="chartReturnsProcessedChannelBar"></canvas></div>
     </div>
     ${valueByChannel.length ? `<div class="card">
@@ -2598,14 +2643,68 @@ function renderReturnsProcessedSkuLevel(rows){
 }
 
 /* ============ CUSTOMERS ============
-   Data source: DATA.reconciliation.dispatch.state_trend[] (already
-   accumulated day-over-day, same mechanism as channel_trend/value_trend).
-   Returning-customer data isn't wired in yet - see the notice on the tab
-   itself for what's needed before that part can be built. */
+   Two independent data sources:
+   - Returning-customer tracking: DATA.reconciliation.customers.registry
+     (accumulated persistently across every sync - Shopify's own "lifetime
+     orders" per customer decides who's a repeat, no local matching logic).
+   - Orders by state: DATA.reconciliation.dispatch.state_trend[] (already
+     accumulated day-over-day, same mechanism as channel_trend/value_trend). */
+let customersOrderCountFilter = null;
+
+function customersData(){ return (DATA && DATA.reconciliation && DATA.reconciliation.customers) || {registry:{}, total_count:0, repeat_count:0, repeat_pct:0, order_count_distribution:{}, last_synced_date:null}; }
+
 function renderCustomers(){
   const returningBody = document.getElementById('customersReturningBody');
+  const cust = customersData();
+  const registry = cust.registry || {};
+  const list = Object.values(registry);
+
   if(returningBody){
-    returningBody.innerHTML = `<div class="empty-state"><div class="glyph">§</div><p>Returning-customer tracking isn't connected yet</p><small>Once a sample of the Shopify Flow email is available, this will show % of customers who've ordered more than once, tracked day-over-day.</small></div>`;
+    if(!list.length){
+      returningBody.innerHTML = `<div class="empty-state"><div class="glyph">§</div><p>No customer data synced yet</p><small>Comes from the daily Shopify customer summary email, once it's flowing through the relay</small></div>`;
+    } else {
+      const dist = cust.order_count_distribution || {};
+      const counts = Object.keys(dist).map(k=>parseInt(k,10)).sort((a,b)=>a-b);
+      const asOf = cust.last_synced_date ? `As of ${cust.last_synced_date}` : '';
+
+      returningBody.innerHTML = `
+        <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+          <div class="kpi-card"><div class="kpi-label">Repeat customer rate</div><div class="kpi-value gold">${cust.repeat_pct}%</div><div class="kpi-note">${cust.repeat_count} of ${cust.total_count} customers tracked</div></div>
+          <div class="kpi-card"><div class="kpi-label">Total customers tracked</div><div class="kpi-value">${fmt(cust.total_count)}</div><div class="kpi-note">${asOf}</div></div>
+          <div class="kpi-card"><div class="kpi-label">Ordered more than once</div><div class="kpi-value">${fmt(cust.repeat_count)}</div><div class="kpi-note">Lifetime orders ≥ 2</div></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Customers by order count</div>
+          <div class="card-hint">Click a bar to see those customers below</div>
+          <div class="chart-wrap" id="wrapCustomersOrderCount"><canvas id="chartCustomersOrderCount"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Customer detail ${customersOrderCountFilter ? '— ordered '+customersOrderCountFilter+' time'+(customersOrderCountFilter==='1'?'':'s') : ''}</div>
+          <div class="status-filter-bar">
+            <span class="status-pill ${!customersOrderCountFilter?'gold':'neutral'}" style="cursor:pointer" onclick="customersOrderCountFilter=null;renderCustomers()">All (${list.length})</span>
+            ${counts.map(k=>`<span class="status-pill ${customersOrderCountFilter===String(k)?'gold':'neutral'}" style="cursor:pointer" onclick="customersOrderCountFilter='${k}';renderCustomers()">${k}× (${dist[k]})</span>`).join('')}
+            <button class="btn-export" onclick="exportRowsToCsv(${JSON.stringify(customersOrderCountFilter ? list.filter(c=>c.lifetime_orders===parseInt(customersOrderCountFilter,10)) : list).replace(/"/g,'&quot;')}, 'customers.csv')" style="margin-left:auto">⭳ Export CSV</button>
+          </div>
+          <div id="customersDetailTable"></div>
+        </div>`;
+
+      destroyChart('customersOrderCount');
+      charts.customersOrderCount = new Chart(document.getElementById('chartCustomersOrderCount'), {
+        type:'bar',
+        data:{labels: counts.map(k=>k+'×'), datasets:[{data: counts.map(k=>dist[k]), backgroundColor: GOLD, borderRadius:4}]},
+        options:{responsive:true,maintainAspectRatio:false,
+          onClick:(evt,elements)=>{ if(elements.length){ customersOrderCountFilter = String(counts[elements[0].index]); renderCustomers(); } },
+          plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} customer(s) · click to filter`}},
+            datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:11},formatter:v=>fmt(v)}},
+          scales:{y:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
+      });
+
+      const filtered = customersOrderCountFilter ? list.filter(c=>c.lifetime_orders===parseInt(customersOrderCountFilter,10)) : list;
+      const tableEl = document.getElementById('customersDetailTable');
+      tableEl.innerHTML = `<table class="ldg-table"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th class="num">Lifetime Orders</th><th class="num">Total Spent</th><th>First Seen</th></tr></thead><tbody>
+        ${filtered.sort((a,b)=>b.lifetime_orders-a.lifetime_orders || b.total_spent-a.total_spent).map(c=>`<tr><td>${c.name||'—'}</td><td>${c.email||'—'}</td><td>${c.phone}</td><td class="num">${c.lifetime_orders}</td><td class="num">${fmtSigned(c.total_spent)}</td><td>${c.first_seen||'—'}</td></tr>`).join('') || `<tr><td colspan="6" style="color:var(--text-3);font-size:12px">No customers in this bucket</td></tr>`}
+        </tbody></table>`;
+    }
   }
 
   const stateBody = document.getElementById('customersStateBody');
