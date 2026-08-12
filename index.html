@@ -2317,7 +2317,8 @@ function renderDispatchChannelLevel(rows){
     }))},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:12,font:{size:10.5}}},
-        tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmt(c.raw)} pcs`}}},
+        tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmt(c.raw)} pcs`}},
+        datalabels:{display:c=>c.dataset.data[c.dataIndex]>0,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:10},formatter:v=>v?fmt(v):''}},
       scales:{y:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
   });
 
@@ -2330,7 +2331,8 @@ function renderDispatchChannelLevel(rows){
     }))},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:12,font:{size:10.5}}},
-        tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmtSigned(c.raw)}`}}},
+        tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmtSigned(c.raw)}`}},
+        datalabels:{display:c=>c.dataset.data[c.dataIndex]>0,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:9.5},formatter:v=>v?fmt(v):''}},
       scales:{y:{ticks:{callback:v=>fmtSigned(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
   });
 
