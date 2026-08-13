@@ -260,6 +260,8 @@ html,body{overflow-x:hidden;max-width:100%}
     <button class="nav-item" onclick="switchTab('dispatch')"><span class="nav-dot"></span>Dispatch</button>
     <button class="nav-item" onclick="switchTab('returns')"><span class="nav-dot"></span>Returns</button>
     <button class="nav-item" onclick="switchTab('customers')"><span class="nav-dot"></span>Customers</button>
+    <button class="nav-item" onclick="switchTab('myntrareturns')"><span class="nav-dot"></span>Myntra Returns (Historical)</button>
+    <button class="nav-item" onclick="switchTab('myntracustomers')"><span class="nav-dot"></span>Myntra Customers</button>
     <span class="nav-label">Build your own</span>
     <button class="nav-item" onclick="switchTab('reports')"><span class="nav-dot"></span>Report Builder</button>
     <span class="nav-label">System</span>
@@ -413,6 +415,23 @@ html,body{overflow-x:hidden;max-width:100%}
       <div id="customersStateBody"></div>
     </div>
 
+    <div id="tab-myntrareturns" class="section">
+      <div class="page-header"><div class="page-title">Myntra Returns — Historical</div><div class="page-sub">Accumulated across every Tally Return/GST file uploaded, filtered to Myntra only</div></div>
+      <div class="card" style="background:var(--surface-2);margin-bottom:16px">
+        <p style="font-size:12px;color:var(--text-2);line-height:1.6">Separate from the main Returns tab, which only ever shows the most recent day. This accumulates permanently — upload multi-month historical Tally Return/GST files to Drive any time and they'll merge in (deduplicated by order + SKU + date, so re-uploading the same file is safe), and the daily file keeps adding to it going forward.</p>
+      </div>
+      <div id="myntraReturnsBreadcrumb" style="margin-bottom:12px;font-size:12.5px"></div>
+      <div id="myntraReturnsBody"></div>
+    </div>
+
+    <div id="tab-myntracustomers" class="section">
+      <div class="page-header"><div class="page-title">Myntra Customers</div><div class="page-sub">Approximate repeat-customer tracking — see caveat below</div></div>
+      <div class="card" style="background:var(--surface-2);margin-bottom:16px">
+        <p style="font-size:12px;color:var(--text-2);line-height:1.6"><strong style="color:var(--debit)">Approximate, not exact:</strong> Myntra masks real customer contact info entirely — no usable email or phone is ever provided to sellers on this channel. This uses the customer's name + address + pincode as the best available identity proxy (the courier needs a real address, so that part isn't masked). Cross-checked against the Shopify/website channel's independently-verified repeat rate and landed close, which is reassuring, but minor address text differences for the same real person will undercount, and two different people sharing a name and pincode would overcount. Accumulates permanently from every Sale Orders file uploaded (historical + daily), deduplicated by line item so overlapping uploads never double-count.</p>
+      </div>
+      <div id="myntraCustomersBody"></div>
+    </div>
+
     <div id="tab-reports" class="section">
       <div class="page-header"><div class="page-title">Report Builder</div><div class="page-sub">Pick any ledgers, any metric, any chart — build the comparison you actually want</div></div>
       <div class="card">
@@ -511,6 +530,8 @@ html,body{overflow-x:hidden;max-width:100%}
     <button class="mobile-nav-item" onclick="switchTab('dispatch');setMob(this)"><span class="mobile-glyph">Ds</span>Dispatch</button>
     <button class="mobile-nav-item" onclick="switchTab('returns');setMob(this)"><span class="mobile-glyph">Rt</span>Returns</button>
     <button class="mobile-nav-item" onclick="switchTab('customers');setMob(this)"><span class="mobile-glyph">Cu</span>Customers</button>
+    <button class="mobile-nav-item" onclick="switchTab('myntrareturns');setMob(this)"><span class="mobile-glyph">MR</span>Myntra Returns</button>
+    <button class="mobile-nav-item" onclick="switchTab('myntracustomers');setMob(this)"><span class="mobile-glyph">MC</span>Myntra Customers</button>
     <button class="mobile-nav-item" onclick="switchTab('reports');setMob(this)"><span class="mobile-glyph">Rp</span>Reports</button>
     <button class="mobile-nav-item" onclick="switchTab('settings');setMob(this)"><span class="mobile-glyph">St</span>Settings</button>
   </div>
@@ -794,6 +815,8 @@ function switchTab(id){
   if(id==='dispatch' && DATA) renderDispatch();
   if(id==='returns' && DATA) renderReturns();
   if(id==='customers' && DATA) renderCustomers();
+  if(id==='myntrareturns' && DATA) renderMyntraReturns();
+  if(id==='myntracustomers' && DATA) renderMyntraCustomers();
   const partyBar = document.getElementById('partyFilterBar');
   if(partyBar) partyBar.style.display = ['overview','revenue','salesreturns','ads'].includes(id) ? 'block' : 'none';
 }
@@ -2743,6 +2766,288 @@ function renderCustomers(){
         datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:10.5},formatter:v=>fmt(v)}},
       scales:{x:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},y:{grid:{display:false}}}}
   });
+}
+
+/* ============ MYNTRA RETURNS (HISTORICAL) ============
+   Data source: DATA.reconciliation.myntra_returns.registry - accumulated
+   permanently across every Tally Return/GST file ever synced (daily +
+   any historical bulk uploads), already filtered to Myntra server-side.
+   Three-level drill-down: Return Type -> SKU -> Size, each level showing
+   both a count chart and a value chart with in-bar labels. */
+let myntraReturnsDrillType = null;
+let myntraReturnsDrillSku = null;
+
+function myntraReturnsData(){ return (DATA && DATA.reconciliation && DATA.reconciliation.myntra_returns) || {registry:{}, total_rows:0}; }
+
+function renderMyntraReturnsBreadcrumb(){
+  const parts = [`<span style="cursor:pointer;color:var(--gold);font-weight:600" onclick="myntraReturnsDrillType=null;myntraReturnsDrillSku=null;renderMyntraReturns()">All types</span>`];
+  if(myntraReturnsDrillType) parts.push(`<span style="cursor:pointer;color:${myntraReturnsDrillSku?'var(--gold)':'var(--text)'};font-weight:600" onclick="myntraReturnsDrillSku=null;renderMyntraReturns()">${myntraReturnsDrillType}</span>`);
+  if(myntraReturnsDrillSku) parts.push(`<span style="color:var(--text);font-weight:600">SKU ${myntraReturnsDrillSku}</span>`);
+  const el = document.getElementById('myntraReturnsBreadcrumb');
+  if(el) el.innerHTML = parts.join(' <span style="color:var(--text-3)">›</span> ');
+}
+
+function renderMyntraReturns(){
+  const body = document.getElementById('myntraReturnsBody');
+  if(!body) return;
+  renderMyntraReturnsBreadcrumb();
+  const registry = myntraReturnsData().registry || {};
+  const allRows = Object.values(registry);
+  if(!allRows.length){
+    body.innerHTML = `<div class="empty-state"><div class="glyph">§</div><p>No Myntra return history loaded yet</p><small>Upload Tally Return/GST files (historical or daily) to the Drive folder, then sync</small></div>`;
+    return;
+  }
+  if(myntraReturnsDrillSku){
+    renderMyntraReturnsSizeLevel(allRows, myntraReturnsDrillType, myntraReturnsDrillSku);
+  } else if(myntraReturnsDrillType){
+    renderMyntraReturnsSkuLevel(allRows, myntraReturnsDrillType);
+  } else {
+    renderMyntraReturnsTypeLevel(allRows);
+  }
+}
+
+function renderMyntraReturnsTypeLevel(allRows){
+  const body = document.getElementById('myntraReturnsBody');
+  const dates = [...new Set(allRows.map(r=>r.date))].sort();
+  const byType = {}, valueByType = {};
+  allRows.forEach(r=>{ byType[r.return_type]=(byType[r.return_type]||0)+r.qty; valueByType[r.return_type]=(valueByType[r.return_type]||0)+r.total; });
+  const types = Object.keys(byType).sort((a,b)=>byType[b]-byType[a]);
+  const totalQty = allRows.reduce((s,r)=>s+r.qty,0);
+  const totalValue = allRows.reduce((s,r)=>s+r.total,0);
+
+  body.innerHTML = `
+    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="kpi-card"><div class="kpi-label">Total pieces returned</div><div class="kpi-value gold">${fmt(totalQty)}</div><div class="kpi-note">${types.length} return types</div></div>
+      <div class="kpi-card"><div class="kpi-label">Total value returned</div><div class="kpi-value gold">${fmtSigned(totalValue)}</div><div class="kpi-note">${dates.length} distinct dates on file</div></div>
+      <div class="kpi-card"><div class="kpi-label">Date range</div><div class="kpi-value" style="font-size:16px">${dates.length?dates[0]+' → '+dates[dates.length-1]:'—'}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">By return type</div>
+      <div class="card-hint" style="display:flex;align-items:center"><span>Click a bar to drill into SKUs</span>
+        <button class="btn-export" onclick="exportRowsToCsv(${JSON.stringify(allRows).replace(/"/g,'&quot;')}, 'myntra_returns_all.csv')" style="margin-left:auto">⭳ Export CSV</button>
+      </div>
+      <div class="chart-wrap" id="wrapMyntraReturnsTypeCount"><canvas id="chartMyntraReturnsTypeCount"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Value by return type</div>
+      <div class="chart-wrap" id="wrapMyntraReturnsTypeValue"><canvas id="chartMyntraReturnsTypeValue"></canvas></div>
+    </div>`;
+
+  destroyChart('myntraReturnsTypeCount');
+  charts.myntraReturnsTypeCount = new Chart(document.getElementById('chartMyntraReturnsTypeCount'), {
+    type:'bar',
+    data:{labels: types, datasets:[{data: types.map(t=>byType[t]), backgroundColor: types.map((t,i)=>PALETTE[i%PALETTE.length]), borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      onClick:(evt,elements)=>{ if(elements.length){ myntraReturnsDrillType = types[elements[0].index]; renderMyntraReturns(); } },
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} pcs · click to drill`}},
+        datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:11},formatter:v=>fmt(v)}},
+      scales:{y:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
+  });
+
+  destroyChart('myntraReturnsTypeValue');
+  charts.myntraReturnsTypeValue = new Chart(document.getElementById('chartMyntraReturnsTypeValue'), {
+    type:'bar',
+    data:{labels: types, datasets:[{data: types.map(t=>valueByType[t]), backgroundColor: types.map((t,i)=>PALETTE[i%PALETTE.length]), borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmtSigned(c.raw)}`}},
+        datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:10.5},formatter:v=>fmt(v)}},
+      scales:{y:{ticks:{callback:v=>fmtSigned(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
+  });
+}
+
+function renderMyntraReturnsSkuLevel(allRows, type){
+  const body = document.getElementById('myntraReturnsBody');
+  const rows = allRows.filter(r=>r.return_type===type);
+  const bySku = {}, valueBySku = {};
+  rows.forEach(r=>{ bySku[r.sku]=(bySku[r.sku]||0)+r.qty; valueBySku[r.sku]=(valueBySku[r.sku]||0)+r.total; });
+  const allSkus = Object.keys(bySku).sort((a,b)=>bySku[b]-bySku[a]);
+  const skus = allSkus.slice(0,40);
+  const totalQty = rows.reduce((s,r)=>s+r.qty,0);
+  const totalValue = rows.reduce((s,r)=>s+r.total,0);
+  const chartHeight = Math.max(skus.length*24, 200);
+
+  body.innerHTML = `
+    <div class="kpi-grid" style="grid-template-columns:repeat(2,1fr)">
+      <div class="kpi-card"><div class="kpi-label">Total pieces</div><div class="kpi-value gold">${fmt(totalQty)}</div><div class="kpi-note">${allSkus.length} SKUs${allSkus.length>40?' (top 40 shown)':''}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Total value</div><div class="kpi-value gold">${fmtSigned(totalValue)}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">By SKU</div>
+      <div class="card-hint" style="display:flex;align-items:center"><span>Click a bar to drill into sizes</span>
+        <button class="btn-export" onclick="exportRowsToCsv(${JSON.stringify(rows).replace(/"/g,'&quot;')}, 'myntra_returns_${type.replace(/\s+/g,'_')}.csv')" style="margin-left:auto">⭳ Export CSV</button>
+      </div>
+      <div style="max-height:600px;overflow-y:auto"><div style="height:${chartHeight}px"><canvas id="chartMyntraReturnsSkuCount"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Value by SKU</div>
+      <div style="max-height:600px;overflow-y:auto"><div style="height:${chartHeight}px"><canvas id="chartMyntraReturnsSkuValue"></canvas></div></div>
+    </div>`;
+
+  destroyChart('myntraReturnsSkuCount');
+  charts.myntraReturnsSkuCount = new Chart(document.getElementById('chartMyntraReturnsSkuCount'), {
+    type:'bar',
+    data:{labels: skus, datasets:[{data: skus.map(s=>bySku[s]), backgroundColor: GOLD, borderRadius:4}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      onClick:(evt,elements)=>{ if(elements.length){ myntraReturnsDrillSku = skus[elements[0].index]; renderMyntraReturns(); } },
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} pcs · click to drill`}},
+        datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:10},formatter:v=>fmt(v)}},
+      scales:{x:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},y:{grid:{display:false}}}}
+  });
+
+  destroyChart('myntraReturnsSkuValue');
+  charts.myntraReturnsSkuValue = new Chart(document.getElementById('chartMyntraReturnsSkuValue'), {
+    type:'bar',
+    data:{labels: skus, datasets:[{data: skus.map(s=>valueBySku[s]), backgroundColor: PALETTE[2], borderRadius:4}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmtSigned(c.raw)}`}},
+        datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:9.5},formatter:v=>fmt(v)}},
+      scales:{x:{ticks:{callback:v=>fmtSigned(v)},grid:{color:'rgba(28,26,23,0.05)'}},y:{grid:{display:false}}}}
+  });
+}
+
+function renderMyntraReturnsSizeLevel(allRows, type, sku){
+  const body = document.getElementById('myntraReturnsBody');
+  const rows = allRows.filter(r=>r.return_type===type && r.sku===sku);
+  const bySize = {}, valueBySize = {};
+  rows.forEach(r=>{ const sz=r.size||'—'; bySize[sz]=(bySize[sz]||0)+r.qty; valueBySize[sz]=(valueBySize[sz]||0)+r.total; });
+  const sizes = Object.keys(bySize).sort((a,b)=>bySize[b]-bySize[a]);
+  const totalQty = rows.reduce((s,r)=>s+r.qty,0);
+  const totalValue = rows.reduce((s,r)=>s+r.total,0);
+
+  body.innerHTML = `
+    <div class="kpi-grid" style="grid-template-columns:repeat(2,1fr)">
+      <div class="kpi-card"><div class="kpi-label">Total pieces</div><div class="kpi-value gold">${fmt(totalQty)}</div><div class="kpi-note">${sizes.length} sizes</div></div>
+      <div class="kpi-card"><div class="kpi-label">Total value</div><div class="kpi-value gold">${fmtSigned(totalValue)}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">By size</div>
+      <div class="card-hint" style="display:flex;align-items:center"><span>${sku}</span>
+        <button class="btn-export" onclick="exportRowsToCsv(${JSON.stringify(rows).replace(/"/g,'&quot;')}, 'myntra_returns_${sku}.csv')" style="margin-left:auto">⭳ Export CSV</button>
+      </div>
+      <div class="chart-wrap" id="wrapMyntraReturnsSizeCount"><canvas id="chartMyntraReturnsSizeCount"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Value by size</div>
+      <div class="chart-wrap" id="wrapMyntraReturnsSizeValue"><canvas id="chartMyntraReturnsSizeValue"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Individual returns</div>
+      <div style="max-height:400px;overflow-y:auto"><table class="ldg-table"><thead><tr><th>Date</th><th>Sale Order No</th><th>Size</th><th class="num">Qty</th><th class="num">Total</th></tr></thead><tbody>
+        ${rows.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,300).map(r=>`<tr><td>${r.date}</td><td style="font-family:var(--mono);font-size:11px">${r.sale_order_number}</td><td>${r.size||'—'}</td><td class="num">${r.qty}</td><td class="num">${fmtSigned(r.total)}</td></tr>`).join('')}
+      </tbody></table></div>
+    </div>`;
+
+  destroyChart('myntraReturnsSizeCount');
+  charts.myntraReturnsSizeCount = new Chart(document.getElementById('chartMyntraReturnsSizeCount'), {
+    type:'bar',
+    data:{labels: sizes, datasets:[{data: sizes.map(s=>bySize[s]), backgroundColor: GOLD, borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} pcs`}},
+        datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:11},formatter:v=>fmt(v)}},
+      scales:{y:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
+  });
+
+  destroyChart('myntraReturnsSizeValue');
+  charts.myntraReturnsSizeValue = new Chart(document.getElementById('chartMyntraReturnsSizeValue'), {
+    type:'bar',
+    data:{labels: sizes, datasets:[{data: sizes.map(s=>valueBySize[s]), backgroundColor: PALETTE[2], borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmtSigned(c.raw)}`}},
+        datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:10.5},formatter:v=>fmt(v)}},
+      scales:{y:{ticks:{callback:v=>fmtSigned(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
+  });
+}
+
+/* ============ MYNTRA CUSTOMERS ============
+   Data source: DATA.reconciliation.myntra_customers.line_registry - a
+   flat, permanently-accumulating list of order LINES (not customers),
+   deduplicated server-side by Sale Order Item Code. Aggregation into
+   actual customers happens here, client-side, by a composite key of
+   normalized name + pincode + address (see the caveat card on the tab
+   itself for why - Myntra provides no real phone/email). Normalization
+   MUST match reconciliation.py's Python version exactly (lowercase,
+   strip everything but a-z0-9, address truncated to 25 chars) or the
+   same customer could key differently between a backend recount and
+   this client-side one - kept in sync deliberately. */
+let myntraCustOrderCountFilter = null;
+
+function myntraCustomersData(){ return (DATA && DATA.reconciliation && DATA.reconciliation.myntra_customers) || {line_registry:{}, total_lines:0}; }
+
+function normalizeForKey(s){ return (s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+
+function aggregateMyntraCustomers(){
+  const lines = Object.values(myntraCustomersData().line_registry || {});
+  const customers = {};
+  lines.forEach(l=>{
+    const key = normalizeForKey(l.name) + '|' + normalizeForKey(l.pincode) + '|' + normalizeForKey(l.address).slice(0,25);
+    if(!customers[key]){
+      customers[key] = { name: l.name, pincode: l.pincode, address: l.address, orderCodes: new Set(), total_spent: 0, first_seen: l.order_date, last_seen: l.order_date };
+    }
+    const c = customers[key];
+    if(l.sale_order_code) c.orderCodes.add(l.sale_order_code);
+    c.total_spent += l.selling_price || 0;
+    if(l.order_date && (!c.first_seen || l.order_date < c.first_seen)) c.first_seen = l.order_date;
+    if(l.order_date && (!c.last_seen || l.order_date > c.last_seen)) c.last_seen = l.order_date;
+  });
+  return Object.values(customers).map(c=>({
+    name: c.name, pincode: c.pincode, address: c.address,
+    lifetime_orders: c.orderCodes.size, total_spent: Math.round(c.total_spent*100)/100,
+    first_seen: c.first_seen, last_seen: c.last_seen,
+  }));
+}
+
+function renderMyntraCustomers(){
+  const body = document.getElementById('myntraCustomersBody');
+  if(!body) return;
+  const list = aggregateMyntraCustomers();
+  if(!list.length){
+    body.innerHTML = `<div class="empty-state"><div class="glyph">§</div><p>No Myntra order history loaded yet</p><small>Upload Sale Orders files (historical or daily) to the Drive folder, then sync</small></div>`;
+    return;
+  }
+
+  const repeatList = list.filter(c=>c.lifetime_orders>=2);
+  const repeatPct = Math.round(repeatList.length/list.length*1000)/10;
+  const dist = {};
+  list.forEach(c=>{ const k=String(c.lifetime_orders); dist[k]=(dist[k]||0)+1; });
+  const counts = Object.keys(dist).map(k=>parseInt(k,10)).sort((a,b)=>a-b);
+
+  body.innerHTML = `
+    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="kpi-card"><div class="kpi-label">Repeat customer rate</div><div class="kpi-value gold">${repeatPct}%</div><div class="kpi-note">${repeatList.length} of ${list.length} (approximate — see caveat above)</div></div>
+      <div class="kpi-card"><div class="kpi-label">Total identified customers</div><div class="kpi-value">${fmt(list.length)}</div><div class="kpi-note">${myntraCustomersData().total_lines} order lines processed</div></div>
+      <div class="kpi-card"><div class="kpi-label">Ordered more than once</div><div class="kpi-value">${fmt(repeatList.length)}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Customers by order count</div>
+      <div class="card-hint">Click a bar to see those customers below</div>
+      <div class="chart-wrap" id="wrapMyntraCustOrderCount"><canvas id="chartMyntraCustOrderCount"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Customer detail ${myntraCustOrderCountFilter ? '— ordered '+myntraCustOrderCountFilter+' time'+(myntraCustOrderCountFilter==='1'?'':'s') : ''}</div>
+      <div class="status-filter-bar">
+        <span class="status-pill ${!myntraCustOrderCountFilter?'gold':'neutral'}" style="cursor:pointer" onclick="myntraCustOrderCountFilter=null;renderMyntraCustomers()">All (${list.length})</span>
+        ${counts.map(k=>`<span class="status-pill ${myntraCustOrderCountFilter===String(k)?'gold':'neutral'}" style="cursor:pointer" onclick="myntraCustOrderCountFilter='${k}';renderMyntraCustomers()">${k}× (${dist[k]})</span>`).join('')}
+        <button class="btn-export" onclick="exportRowsToCsv(${JSON.stringify(myntraCustOrderCountFilter ? list.filter(c=>c.lifetime_orders===parseInt(myntraCustOrderCountFilter,10)) : list).replace(/"/g,'&quot;')}, 'myntra_customers.csv')" style="margin-left:auto">⭳ Export CSV</button>
+      </div>
+      <div id="myntraCustDetailTable"></div>
+    </div>`;
+
+  destroyChart('myntraCustOrderCount');
+  charts.myntraCustOrderCount = new Chart(document.getElementById('chartMyntraCustOrderCount'), {
+    type:'bar',
+    data:{labels: counts.map(k=>k+'×'), datasets:[{data: counts.map(k=>dist[k]), backgroundColor: GOLD, borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      onClick:(evt,elements)=>{ if(elements.length){ myntraCustOrderCountFilter = String(counts[elements[0].index]); renderMyntraCustomers(); } },
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)} customer(s) · click to filter`}},
+        datalabels:{display:true,color:'#fff',anchor:'center',align:'center',font:{weight:600,size:11},formatter:v=>fmt(v)}},
+      scales:{y:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(28,26,23,0.05)'}},x:{grid:{display:false}}}}
+  });
+
+  const filtered = myntraCustOrderCountFilter ? list.filter(c=>c.lifetime_orders===parseInt(myntraCustOrderCountFilter,10)) : list;
+  const tableEl = document.getElementById('myntraCustDetailTable');
+  tableEl.innerHTML = `<table class="ldg-table"><thead><tr><th>Name</th><th>Pincode</th><th>Address</th><th class="num">Orders</th><th class="num">Total Spent</th><th>First Seen</th><th>Last Seen</th></tr></thead><tbody>
+    ${filtered.slice().sort((a,b)=>b.lifetime_orders-a.lifetime_orders || b.total_spent-a.total_spent).slice(0,300).map(c=>`<tr><td>${c.name||'—'}</td><td>${c.pincode||'—'}</td><td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(c.address||'').replace(/"/g,'&quot;')}">${c.address||'—'}</td><td class="num">${c.lifetime_orders}</td><td class="num">${fmtSigned(c.total_spent)}</td><td>${c.first_seen||'—'}</td><td>${c.last_seen||'—'}</td></tr>`).join('') || `<tr><td colspan="7" style="color:var(--text-3);font-size:12px">No customers in this bucket</td></tr>`}
+    </tbody></table>`;
 }
 
 /* ============ REPORT BUILDER ============ */
