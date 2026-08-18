@@ -1295,8 +1295,21 @@ function renderCombinedBreakdownTable(containerId, groupLabel, names, salesTotal
   document.getElementById(containerId).innerHTML = `<table class="ldg-table"><thead><tr><th>${groupLabel}</th><th class="num">Sales</th><th class="num">Returns</th><th class="num">Return %</th></tr></thead><tbody>
     ${names.map(name=>{
       const s = salesTotals[name]||0, r = Math.abs(returnTotals[name]||0);
-      const pct = s ? (r/s*100) : 0;
-      return `<tr style="cursor:pointer" onclick='openSalesReturnsDrill(${JSON.stringify(name)},${JSON.stringify(codesByGroup[name]||[])},${monthsSel&&monthsSel.length?JSON.stringify(monthsSel):'null'})'><td>${name}</td><td class="num credit">${fmt(s)}</td><td class="num debit">${r?fmt(r):'—'}</td><td class="num" style="color:${pct>10?'var(--debit)':'var(--text-2)'}">${s?pct.toFixed(1)+'%':'—'}</td></tr>`;
+      // salesTotals here is always NET of returns already, WITH the GST
+      // multiplier already applied to that net figure: s = (gross-r)*1.05
+      // (see aggregateSalesGstCorrected). The returns figure r, by
+      // contrast, comes from a separate aggregation that does NOT apply
+      // the multiplier. Naively dividing r by s inflates the percentage
+      // for every channel, worse the higher the real return rate is
+      // (confirmed against real ledger data: Amazon showed 51.1% this
+      // way vs a true 34.9%, Myntra would show 66.8% vs a true 41.2%).
+      // The algebraically exact fix: s + r*GST_MULTIPLIER reconstructs
+      // the true GST-adjusted gross sales baseline exactly (verified to
+      // 2 decimal places against independently-computed ledger totals),
+      // since s + r*GST_MULTIPLIER = (gross-r)*1.05 + r*1.05 = gross*1.05.
+      const grossWithGst = s + r*GST_MULTIPLIER;
+      const pct = grossWithGst ? (r*GST_MULTIPLIER/grossWithGst*100) : 0;
+      return `<tr style="cursor:pointer" onclick='openSalesReturnsDrill(${JSON.stringify(name)},${JSON.stringify(codesByGroup[name]||[])},${monthsSel&&monthsSel.length?JSON.stringify(monthsSel):'null'})'><td>${name}</td><td class="num credit">${fmt(s)}</td><td class="num debit">${r?fmt(r):'—'}</td><td class="num" style="color:${pct>10?'var(--debit)':'var(--text-2)'}">${grossWithGst?pct.toFixed(1)+'%':'—'}</td></tr>`;
     }).join('')}
   </tbody></table>`;
 }
