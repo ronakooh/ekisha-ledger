@@ -1004,8 +1004,22 @@ function reportAggregate(kind, monthsSel, groupFn){
 }
 const GST_MULTIPLIER = 1.05;
 function aggregateSalesGstCorrected(monthsSel, groupFn){
+  // Renamed in spirit (kept the same function name to avoid touching every
+  // call site) - this now returns TRUE GROSS sales, GST-adjusted, with
+  // returns NOT subtracted here. It used to subtract returns internally
+  // (totals[g] = (gross-returns)*GST_MULTIPLIER), which silently made
+  // every caller's "Sales" figure already net-of-returns - harmless on
+  // its own, but every place that ALSO explicitly subtracted "Returns"
+  // separately (the Overview page's Net Profit formula, in particular)
+  // ended up subtracting returns TWICE. Confirmed against real numbers:
+  // Overview showed a ₹2.14L loss for a period that was actually a
+  // ₹1.33L profit - the exact ₹3.47L gap matched the period's total
+  // returns precisely. codesByGroup still includes both sales AND
+  // returns transaction codes (unchanged) - that's for the drill-down
+  // feature, not the totals math, and a channel's returns codes are
+  // still relevant to show there.
   const monthSet = monthsSel && monthsSel.length ? new Set(monthsSel) : null;
-  const grossTotals = {}, grossPerMonth = {}, returnsTotals = {}, returnsPerMonth = {}, codesByGroup = {};
+  const grossTotals = {}, grossPerMonth = {}, codesByGroup = {};
   ACTIVE_TRANSACTIONS.forEach(t=>{
     if(ACTIVE_PARTIES && !ACTIVE_PARTIES.has(t.code)) return;
     const m = t.date.slice(0,7);
@@ -1020,21 +1034,16 @@ function aggregateSalesGstCorrected(monthsSel, groupFn){
       if(!codesByGroup[group]) codesByGroup[group] = new Set();
       codesByGroup[group].add(t.code);
     } else if(t.refcode === SALES_RETURN_REFCODE){
-      returnsTotals[group] = (returnsTotals[group]||0) + (t.cr - t.dr);
-      if(!returnsPerMonth[group]) returnsPerMonth[group] = {};
-      returnsPerMonth[group][m] = (returnsPerMonth[group][m]||0) + (t.cr - t.dr);
       if(!codesByGroup[group]) codesByGroup[group] = new Set();
       codesByGroup[group].add(t.code);
     }
   });
   const totals = {}, perMonth = {};
-  const allGroups = new Set([...Object.keys(grossTotals), ...Object.keys(returnsTotals)]);
-  allGroups.forEach(g=>{
-    totals[g] = ((grossTotals[g]||0) - (returnsTotals[g]||0)) * GST_MULTIPLIER;
-    const allMonths = new Set([...Object.keys(grossPerMonth[g]||{}), ...Object.keys(returnsPerMonth[g]||{})]);
+  Object.keys(grossTotals).forEach(g=>{
+    totals[g] = (grossTotals[g]||0) * GST_MULTIPLIER;
     perMonth[g] = {};
-    allMonths.forEach(m=>{
-      perMonth[g][m] = (((grossPerMonth[g]||{})[m]||0) - ((returnsPerMonth[g]||{})[m]||0)) * GST_MULTIPLIER;
+    Object.keys(grossPerMonth[g]||{}).forEach(m=>{
+      perMonth[g][m] = ((grossPerMonth[g]||{})[m]||0) * GST_MULTIPLIER;
     });
   });
   Object.keys(codesByGroup).forEach(g=>codesByGroup[g]=[...codesByGroup[g]]);
@@ -1294,22 +1303,20 @@ function openSalesReturnsDrill(name, codes, monthsSel){
 function renderCombinedBreakdownTable(containerId, groupLabel, names, salesTotals, returnTotals, codesByGroup, monthsSel){
   document.getElementById(containerId).innerHTML = `<table class="ldg-table"><thead><tr><th>${groupLabel}</th><th class="num">Sales</th><th class="num">Returns</th><th class="num">Return %</th></tr></thead><tbody>
     ${names.map(name=>{
-      const s = salesTotals[name]||0, r = Math.abs(returnTotals[name]||0);
-      // salesTotals here is always NET of returns already, WITH the GST
-      // multiplier already applied to that net figure: s = (gross-r)*1.05
-      // (see aggregateSalesGstCorrected). The returns figure r, by
-      // contrast, comes from a separate aggregation that does NOT apply
-      // the multiplier. Naively dividing r by s inflates the percentage
-      // for every channel, worse the higher the real return rate is
-      // (confirmed against real ledger data: Amazon showed 51.1% this
-      // way vs a true 34.9%, Myntra would show 66.8% vs a true 41.2%).
-      // The algebraically exact fix: s + r*GST_MULTIPLIER reconstructs
-      // the true GST-adjusted gross sales baseline exactly (verified to
-      // 2 decimal places against independently-computed ledger totals),
-      // since s + r*GST_MULTIPLIER = (gross-r)*1.05 + r*1.05 = gross*1.05.
-      const grossWithGst = s + r*GST_MULTIPLIER;
-      const pct = grossWithGst ? (r*GST_MULTIPLIER/grossWithGst*100) : 0;
-      return `<tr style="cursor:pointer" onclick='openSalesReturnsDrill(${JSON.stringify(name)},${JSON.stringify(codesByGroup[name]||[])},${monthsSel&&monthsSel.length?JSON.stringify(monthsSel):'null'})'><td>${name}</td><td class="num credit">${fmt(s)}</td><td class="num debit">${r?fmt(r):'—'}</td><td class="num" style="color:${pct>10?'var(--debit)':'var(--text-2)'}">${grossWithGst?pct.toFixed(1)+'%':'—'}</td></tr>`;
+      // salesTotals (s) is TRUE gross sales, GST-adjusted (see
+      // aggregateSalesGstCorrected - it no longer subtracts returns
+      // internally, since that caused returns to get double-counted
+      // anywhere a caller ALSO subtracted them separately, e.g. the
+      // Overview page's Net Profit formula, confirmed to be showing a
+      // ₹2.14L loss for a period that was actually a ₹1.33L profit).
+      // returnTotals (r) comes from a separate aggregation that doesn't
+      // apply the GST multiplier at all, so it's scaled up here to sit
+      // on the same GST-adjusted basis as Sales before computing the
+      // percentage - verified to 2 decimal places against independently
+      // computed ledger totals (Myntra: 41.24%, Amazon: 34.91%).
+      const s = salesTotals[name]||0, r = Math.abs(returnTotals[name]||0) * GST_MULTIPLIER;
+      const pct = s ? (r/s*100) : 0;
+      return `<tr style="cursor:pointer" onclick='openSalesReturnsDrill(${JSON.stringify(name)},${JSON.stringify(codesByGroup[name]||[])},${monthsSel&&monthsSel.length?JSON.stringify(monthsSel):'null'})'><td>${name}</td><td class="num credit">${fmt(s)}</td><td class="num debit">${r?fmt(r):'—'}</td><td class="num" style="color:${pct>10?'var(--debit)':'var(--text-2)'}">${s?pct.toFixed(1)+'%':'—'}</td></tr>`;
     }).join('')}
   </tbody></table>`;
 }
@@ -1529,7 +1536,11 @@ function renderSalesPage(monthsSel){
   const mLabels = periodMonths.map(monthLabel);
   const byChannel = salesByChannel(monthsSel);
   const byChannelRet = salesReturnByChannel(monthsSel);
-  const chNames = Object.keys(byChannel.totals);
+  // Union of both, not sales-only - a channel with a return but zero
+  // gross sales this period (confirmed real case: Ajio, a stray return
+  // with no matching sale in the same period) still needs to show up,
+  // with Sales correctly at 0 rather than silently disappearing.
+  const chNames = [...new Set([...Object.keys(byChannel.totals), ...Object.keys(byChannelRet.totals)])];
   const chCodesByGroup = Object.fromEntries(chNames.map(ch=>[ch, [...new Set([...(byChannel.codesByGroup[ch]||[]), ...(byChannelRet.codesByGroup[ch]||[])])]]));
 
   const drillCb = (name, codes) => openSalesReturnsDrill(name, codes, monthsSel);
@@ -1547,8 +1558,8 @@ function renderSalesPage(monthsSel){
 
   const byState = salesByState(monthsSel);
   const byStateRet = salesReturnByState(monthsSel);
-  const stateNames = Object.keys(byState.totals).sort((a,b)=>byState.totals[b]-byState.totals[a]);
-  const stateVals = stateNames.map(s=>byState.totals[s]);
+  const stateNames = [...new Set([...Object.keys(byState.totals), ...Object.keys(byStateRet.totals)])].sort((a,b)=>(byState.totals[b]||0)-(byState.totals[a]||0));
+  const stateVals = stateNames.map(s=>byState.totals[s]||0);
   const stateCodesByGroup = Object.fromEntries(stateNames.map(s=>[s, [...new Set([...(byState.codesByGroup[s]||[]), ...(byStateRet.codesByGroup[s]||[])])]]));
   destroyChart('revState');
   charts.revState = makeHBar(document.getElementById('chartRevByState'), stateNames.slice(0,15), stateVals.slice(0,15), CREDIT, stateNames.slice(0,15).map(s=>stateCodesByGroup[s]||[]), drillCb);
@@ -1563,7 +1574,10 @@ function renderSalesReturnsPage(monthsSel){
   const mLabels = periodMonths.map(monthLabel);
   const byChannel = salesReturnByChannel(monthsSel);
   const byChannelSales = salesByChannel(monthsSel);
-  const chNames = Object.keys(byChannel.totals);
+  // Union of both, same reasoning as the Sales page - a channel with
+  // sales but no returns this period (the normal case) shouldn't be
+  // excluded from this page's list either.
+  const chNames = [...new Set([...Object.keys(byChannel.totals), ...Object.keys(byChannelSales.totals)])];
   const chCodesByGroup = Object.fromEntries(chNames.map(ch=>[ch, [...new Set([...(byChannel.codesByGroup[ch]||[]), ...(byChannelSales.codesByGroup[ch]||[])])]]));
 
   const drillCb = (name, codes) => openSalesReturnsDrill(name, codes, monthsSel);
@@ -1581,8 +1595,8 @@ function renderSalesReturnsPage(monthsSel){
 
   const byState = salesReturnByState(monthsSel);
   const byStateSales = salesByState(monthsSel);
-  const stateNames = Object.keys(byState.totals).sort((a,b)=>byState.totals[b]-byState.totals[a]);
-  const stateVals = stateNames.map(s=>byState.totals[s]);
+  const stateNames = [...new Set([...Object.keys(byState.totals), ...Object.keys(byStateSales.totals)])].sort((a,b)=>(byState.totals[b]||0)-(byState.totals[a]||0));
+  const stateVals = stateNames.map(s=>byState.totals[s]||0);
   const stateCodesByGroup = Object.fromEntries(stateNames.map(s=>[s, [...new Set([...(byState.codesByGroup[s]||[]), ...(byStateSales.codesByGroup[s]||[])])]]));
   destroyChart('retState');
   charts.retState = makeHBar(document.getElementById('chartRetByState'), stateNames.slice(0,15), stateVals.slice(0,15), DEBIT, stateNames.slice(0,15).map(s=>stateCodesByGroup[s]||[]), drillCb);
@@ -1667,7 +1681,16 @@ function renderOverview(monthsSel){
 
   const totalRevenue = Object.values(byChannel.totals).reduce((a,b)=>a+b,0);
   const byChannelReturns = salesReturnByChannel(monthsSel);
-  const totalReturns = Math.abs(Object.values(byChannelReturns.totals).reduce((a,b)=>a+b,0));
+  // totalRevenue is TRUE gross now (see aggregateSalesGstCorrected) -
+  // returns need the same GST_MULTIPLIER applied here to sit on the same
+  // basis before being subtracted, otherwise this ends up close to right
+  // by coincidence rather than being consistently correct. This used to
+  // be a much bigger bug before aggregateSalesGstCorrected was fixed:
+  // totalRevenue was ALREADY net-of-returns, so subtracting totalReturns
+  // again here double-counted them - confirmed against real numbers,
+  // this was showing a ₹2.14L loss for a period that was actually a
+  // ₹1.33L profit, a gap exactly matching that period's total returns.
+  const totalReturns = Math.abs(Object.values(byChannelReturns.totals).reduce((a,b)=>a+b,0)) * GST_MULTIPLIER;
   const totalAds = Object.values(adSpendByChannel(monthsSel).totals).reduce((a,b)=>a+b,0);
   const totalPurchases = totalPurchasesForPeriod(monthsSel);
   const totalExpenses = totalForPeriod(expenseCodes,'dr',monthsSel) - totalForPeriod(expenseCodes,'cr',monthsSel);
