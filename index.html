@@ -1003,6 +1003,40 @@ function reportAggregate(kind, monthsSel, groupFn){
   return {totals, perMonth, codesByGroup};
 }
 const GST_MULTIPLIER = 1.05;
+
+// Per-unit cost by category, as given by the user directly - matches the
+// exact category names produced by categorize() in parsers/inventory.py
+// (reused for dispatch too - see parsers/dispatch.py). Used for the COGS
+// figure on the Overview page: units DISPATCHED per category (not units
+// sold net of returns - dispatch is the best available accumulating
+// per-category count) x this fixed cost. "Blank" (categorize() couldn't
+// match the product name) is deliberately left out of both this map and
+// the accumulated category_trend - confirmed against real data this is
+// only ~0.03% of rows, but it's excluded from COGS rather than silently
+// costed at ₹0, so it can't understate the real figure.
+const CATEGORY_COST = {'Coords': 560, 'Tunics': 300, 'Shirts': 375, 'Kurta Sets': 500, 'Dresses': 400, 'Kurtis': 350};
+
+/** Sums units-dispatched x per-category cost for whatever months are
+ * selected (or every month accumulated so far, if none are). Returns
+ * {cogs, unitsCosted, unitsUncosted} - unitsUncosted counts entries whose
+ * category isn't in CATEGORY_COST (shouldn't normally happen, since
+ * category_trend already excludes "Blank" server-side, but this stays
+ * defensive in case a category name ever drifts out of sync between the
+ * backend and this map). */
+function computeCogs(monthsSel){
+  const monthSet = monthsSel && monthsSel.length ? new Set(monthsSel) : null;
+  const trend = dispatchData().category_trend || [];
+  let cogs = 0, unitsCosted = 0, unitsUncosted = 0;
+  trend.forEach(e=>{
+    if(monthSet && !monthSet.has(e.date.slice(0,7))) return;
+    const unitCost = CATEGORY_COST[e.category];
+    if(unitCost===undefined){ unitsUncosted += e.qty; return; }
+    cogs += unitCost * e.qty;
+    unitsCosted += e.qty;
+  });
+  return {cogs, unitsCosted, unitsUncosted};
+}
+
 function aggregateSalesGstCorrected(monthsSel, groupFn){
   // Renamed in spirit (kept the same function name to avoid touching every
   // call site) - this now returns TRUE GROSS sales, GST-adjusted, with
@@ -1694,7 +1728,9 @@ function renderOverview(monthsSel){
   const totalAds = Object.values(adSpendByChannel(monthsSel).totals).reduce((a,b)=>a+b,0);
   const totalPurchases = totalPurchasesForPeriod(monthsSel);
   const totalExpenses = totalForPeriod(expenseCodes,'dr',monthsSel) - totalForPeriod(expenseCodes,'cr',monthsSel);
-  const netProfit = totalRevenue - totalReturns - totalExpenses - totalAds;
+  const cogsInfo = computeCogs(monthsSel);
+  const totalCogs = cogsInfo.cogs;
+  const netProfit = totalRevenue - totalReturns - totalExpenses - totalAds - totalCogs;
 
   const bankSumsAll = sumSeries(bankCodes, months, 'netdr', false);
   let running=0; const bankCumAll={};
@@ -1716,7 +1752,8 @@ function renderOverview(monthsSel){
     <div class="kpi-card"><div class="kpi-label">Total Purchases</div><div class="kpi-value debit">${fmtSigned(totalPurchases)}</div><div class="kpi-note">Goods bought, informational only — not in Net Profit below</div></div>
     <div class="kpi-card"><div class="kpi-label">Total Expenses</div><div class="kpi-value debit">${fmtSigned(totalExpenses)}</div><div class="kpi-note">Operating costs only · ${totalRevenue?(totalExpenses/totalRevenue*100).toFixed(1):'0'}% of sales</div></div>
     <div class="kpi-card"><div class="kpi-label">Total Ad Spend</div><div class="kpi-value debit">${fmtSigned(totalAds)}</div><div class="kpi-note">${totalRevenue?(totalAds/totalRevenue*100).toFixed(1):'0'}% of sales</div></div>
-    <div class="kpi-card"><div class="kpi-label">Net (Profit / Loss)</div><div class="kpi-value ${netProfit>=0?'credit':'debit'}">${fmtSigned(netProfit)}</div><div class="kpi-note">Sales − returns − expenses − ad spend (excludes purchases)</div></div>
+    <div class="kpi-card"><div class="kpi-label">Cost of Goods Sold</div><div class="kpi-value debit">${fmtSigned(totalCogs)}</div><div class="kpi-note">${cogsInfo.unitsCosted} units dispatched × category cost${cogsInfo.unitsUncosted?` · ${cogsInfo.unitsUncosted} units uncategorized, excluded`:''}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Net (Profit / Loss)</div><div class="kpi-value ${netProfit>=0?'credit':'debit'}">${fmtSigned(netProfit)}</div><div class="kpi-note">Sales − returns − expenses − ad spend − COGS (excludes purchases)</div></div>
     <div class="kpi-card"><div class="kpi-label">Net Bank Position</div><div class="kpi-value ${netBank>=0?'credit':'debit'}">${fmtSigned(netBank)}</div><div class="kpi-note">HDFC, as of period end</div></div>
     <div class="kpi-card"><div class="kpi-label">Vendor Payables</div><div class="kpi-value gold">${fmtSigned(topVendorsUpTo.reduce((s,[,v])=>s+v,0))}</div><div class="kpi-note">Outstanding, top 10, as of period end</div></div>`;
 
@@ -2335,7 +2372,7 @@ function renderDispatchMonthPicker(){
   wrap.innerHTML = html;
 }
 function setDispatchMonth(m){ dispatchSelectedMonth = m; renderDispatch(); }
-function dispatchData(){ return (DATA && DATA.reconciliation && DATA.reconciliation.dispatch) || {latest_rows:[], channel_trend:[], value_trend:[], state_trend:[]}; }
+function dispatchData(){ return (DATA && DATA.reconciliation && DATA.reconciliation.dispatch) || {latest_rows:[], channel_trend:[], value_trend:[], state_trend:[], category_trend:[]}; }
 
 function renderDispatchBreadcrumb(){
   const parts = [`<span style="cursor:pointer;color:var(--gold);font-weight:600" onclick="dispatchDrillChannel=null;dispatchDrillSku=null;renderDispatch()">All channels</span>`];
