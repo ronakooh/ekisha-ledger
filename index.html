@@ -1035,30 +1035,67 @@ const SALES_CHANNEL_TO_AD_LABEL = {'Website':'Meta/Facebook', 'Myntra':'Myntra',
 // with a silently-wrong ₹0 ad spend.
 const OVERVIEW_FILTERABLE_CHANNELS = ['Website', 'Myntra', 'Amazon'];
 
-/** Sums units-dispatched x per-category cost for whatever months are
- * selected (or every month accumulated so far, if none are). channelFilter
- * is a Sales-page channel label ('Website'/'Myntra'/'Amazon') or null for
- * all channels - translated to dispatch's own channel naming via
- * DISPATCH_TO_SALES_CHANNEL before filtering, since category_trend stores
- * dispatch's raw channel names, not the Sales page's labels. Returns
- * {cogs, unitsCosted, unitsUncosted} - unitsUncosted counts entries whose
- * category isn't in CATEGORY_COST (shouldn't normally happen, since
- * category_trend already excludes "Blank" server-side, but this stays
- * defensive in case a category name ever drifts out of sync between the
- * backend and this map). */
+/** COGS on units actually kept by the customer: dispatched minus
+ * returned, per category (and per channel, if filtering) - previously
+ * this only counted dispatched units, overstating COGS by the cost of
+ * every unit that came back. channelFilter is a Sales-page channel label
+ * ('Website'/'Myntra'/'Amazon') or null for all channels - translated to
+ * dispatch/returns' own raw channel naming via DISPATCH_TO_SALES_CHANNEL
+ * before filtering (confirmed both dispatch and the Tally Return report
+ * use the identical raw channel names, so one mapping covers both).
+ * Netting is done per (category, channel, month) and floored at zero -
+ * a return can genuinely land in a later month than its original
+ * dispatch, which would otherwise show as a nonsensical negative COGS
+ * contribution for that combination; unitsReturnedUnmatched counts any
+ * such floored-away excess so it's visible rather than silently
+ * absorbed. Returns {cogs, unitsDispatched, unitsReturned, unitsNet,
+ * unitsCosted, unitsUncosted, unitsReturnedUnmatched}. */
 function computeCogs(monthsSel, channelFilter){
   const monthSet = monthsSel && monthsSel.length ? new Set(monthsSel) : null;
-  const trend = dispatchData().category_trend || [];
-  let cogs = 0, unitsCosted = 0, unitsUncosted = 0;
-  trend.forEach(e=>{
-    if(monthSet && !monthSet.has(e.date.slice(0,7))) return;
-    if(channelFilter && DISPATCH_TO_SALES_CHANNEL[e.channel]!==channelFilter) return;
-    const unitCost = CATEGORY_COST[e.category];
-    if(unitCost===undefined){ unitsUncosted += e.qty; return; }
-    cogs += unitCost * e.qty;
-    unitsCosted += e.qty;
+  const dispatchTrend = dispatchData().category_trend || [];
+  const returnsRegistry = (DATA && DATA.reconciliation && DATA.reconciliation.returns_category && DATA.reconciliation.returns_category.registry) || {};
+
+  const passesFilter = (date, channel) => {
+    if(monthSet && !monthSet.has(date.slice(0,7))) return false;
+    if(channelFilter && DISPATCH_TO_SALES_CHANNEL[channel]!==channelFilter) return false;
+    return true;
+  };
+
+  const dispatchedByKey = {}; // "category|month" -> qty
+  dispatchTrend.forEach(e=>{
+    if(!passesFilter(e.date, e.channel)) return;
+    const key = e.category+'|'+e.date.slice(0,7);
+    dispatchedByKey[key] = (dispatchedByKey[key]||0) + e.qty;
   });
-  return {cogs, unitsCosted, unitsUncosted};
+  const returnedByKey = {};
+  Object.values(returnsRegistry).forEach(e=>{
+    if(!passesFilter(e.date, e.channel)) return;
+    const key = e.category+'|'+e.date.slice(0,7);
+    returnedByKey[key] = (returnedByKey[key]||0) + e.qty;
+  });
+
+  let cogs = 0, unitsDispatched = 0, unitsReturned = 0, unitsNet = 0, unitsCosted = 0, unitsUncosted = 0, unitsReturnedUnmatched = 0;
+  Object.keys(dispatchedByKey).forEach(key=>{
+    const category = key.split('|')[0];
+    const dispatched = dispatchedByKey[key];
+    const returned = returnedByKey[key] || 0;
+    unitsDispatched += dispatched;
+    unitsReturned += Math.min(returned, dispatched);
+    const net = Math.max(0, dispatched - returned);
+    unitsNet += net;
+    const unitCost = CATEGORY_COST[category];
+    if(unitCost===undefined){ unitsUncosted += net; return; }
+    cogs += unitCost * net;
+    unitsCosted += net;
+  });
+  // Returns whose category+month never showed up on the dispatch side at
+  // all this period (the "later month" case described above) - counted
+  // but not subtracted from anything, so they don't produce a negative.
+  Object.keys(returnedByKey).forEach(key=>{
+    if(!(key in dispatchedByKey)) unitsReturnedUnmatched += returnedByKey[key];
+  });
+
+  return {cogs, unitsDispatched, unitsReturned, unitsNet, unitsCosted, unitsUncosted, unitsReturnedUnmatched};
 }
 
 function aggregateSalesGstCorrected(monthsSel, groupFn){
@@ -1800,7 +1837,7 @@ function renderOverview(monthsSel){
     <div class="kpi-card"><div class="kpi-label">Total Purchases</div><div class="kpi-value debit">${fmtSigned(totalPurchases)}</div><div class="kpi-note">Goods bought, company-wide — not in the net figure below</div></div>
     <div class="kpi-card"><div class="kpi-label">Total Expenses</div><div class="kpi-value debit">${fmtSigned(totalExpenses)}</div><div class="kpi-note">${chFilter?'Company-wide — no per-channel split, not in the net figure below':`Operating costs only · ${totalRevenue?(totalExpenses/totalRevenue*100).toFixed(1):'0'}% of sales`}</div></div>
     <div class="kpi-card"><div class="kpi-label">Total Ad Spend</div><div class="kpi-value debit">${fmtSigned(totalAds)}</div><div class="kpi-note">${chFilter?`${chFilter} (${SALES_CHANNEL_TO_AD_LABEL[chFilter]} vendor)`:(totalRevenue?(totalAds/totalRevenue*100).toFixed(1)+'% of sales':'0% of sales')}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Cost of Goods Sold</div><div class="kpi-value debit">${fmtSigned(totalCogs)}</div><div class="kpi-note">${cogsInfo.unitsCosted} units dispatched × category cost${cogsInfo.unitsUncosted?` · ${cogsInfo.unitsUncosted} uncategorized, excluded`:''}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Cost of Goods Sold</div><div class="kpi-value debit">${fmtSigned(totalCogs)}</div><div class="kpi-note">${fmt(cogsInfo.unitsNet)} net units (${fmt(cogsInfo.unitsDispatched)} dispatched − ${fmt(cogsInfo.unitsReturned)} returned)${cogsInfo.unitsUncosted?` · ${cogsInfo.unitsUncosted} uncategorized, excluded`:''}${cogsInfo.unitsReturnedUnmatched?` · ${cogsInfo.unitsReturnedUnmatched} returns from an earlier period`:''}</div></div>
     <div class="kpi-card"><div class="kpi-label">${chFilter?'Channel Contribution':'Net (Profit / Loss)'}</div><div class="kpi-value ${netProfit>=0?'credit':'debit'}">${fmtSigned(netProfit)}</div><div class="kpi-note">${chFilter?'Sales − returns − ad spend − COGS (excludes company-wide expenses & purchases)':'Sales − returns − expenses − ad spend − COGS (excludes purchases)'}</div></div>
     <div class="kpi-card"><div class="kpi-label">Net Bank Position</div><div class="kpi-value ${netBank>=0?'credit':'debit'}">${fmtSigned(netBank)}</div><div class="kpi-note">HDFC, as of period end</div></div>
     <div class="kpi-card"><div class="kpi-label">Vendor Payables</div><div class="kpi-value gold">${fmtSigned(topVendorsUpTo.reduce((s,[,v])=>s+v,0))}</div><div class="kpi-note">Outstanding, top 10, as of period end</div></div>`;
