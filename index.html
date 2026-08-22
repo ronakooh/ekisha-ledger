@@ -272,6 +272,7 @@ html,body{overflow-x:hidden;max-width:100%}
     <div id="tab-overview" class="section active">
       <div class="page-header"><div class="page-title">Overview</div><div class="page-sub" id="overviewPeriod">—</div></div>
       <div class="form-group" style="margin-bottom:16px"><label class="form-label">Period — pick a Financial Year, a quarter, individual months, or leave on Full Year</label><div id="fs-presets-overview" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div><div id="fs-chips-overview" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
+      <div class="form-group" style="margin-bottom:16px"><label class="form-label">Channel — Sales, Returns, Ad Spend and COGS below narrow to this channel. Operating Expenses and Purchases stay company-wide (no reliable per-channel split), so the net figure becomes "Channel Contribution" instead of "Net Profit" when one is picked.</label><div id="overview-channel-picker" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
       <div class="kpi-grid" id="kpiGrid"></div>
       <div class="card"><div class="card-title">Sales by channel — monthly</div><div class="card-hint">Click any bar to see sales vs returns</div><div class="chart-wrap tall" id="wrapOverviewRevenue"><canvas id="chartOverviewRevenue"></canvas></div></div>
       <div class="card"><div class="card-title">Sales returns by channel — monthly</div><div class="card-hint">Click any bar to see sales vs returns</div><div class="chart-wrap tall" id="wrapOverviewReturns"><canvas id="chartOverviewReturns"></canvas></div></div>
@@ -1016,19 +1017,42 @@ const GST_MULTIPLIER = 1.05;
 // costed at ₹0, so it can't understate the real figure.
 const CATEGORY_COST = {'Coords': 560, 'Tunics': 300, 'Shirts': 375, 'Kurta Sets': 500, 'Dresses': 400, 'Kurtis': 350};
 
+// Three different subsystems name the same channels differently -
+// dispatch's raw "Channel Name" field (confirmed real values: MYNTRAPPMP,
+// Ekisha, FLIPKART, AMAZON_IN_API, AJIO_OMNI), the Sales page's ledger-
+// derived labels (Website, Myntra, Amazon, Flipkart, Ajio - from
+// CHANNEL_PREFIX), and Ad Spend's vendor-keyword labels (Meta/Facebook,
+// Myntra, Amazon - confirmed directly: Meta/Facebook ad spend IS the
+// website's, since Ekisha runs Meta ads to its own site, not to
+// marketplaces - there's no "Website" bucket in ad spend, it's under
+// this label instead). The Overview channel filter below is the one
+// place all three need to line up.
+const DISPATCH_TO_SALES_CHANNEL = {'Ekisha':'Website', 'MYNTRAPPMP':'Myntra', 'AMAZON_IN_API':'Amazon', 'FLIPKART':'Flipkart', 'AJIO_OMNI':'Ajio'};
+const SALES_CHANNEL_TO_AD_LABEL = {'Website':'Meta/Facebook', 'Myntra':'Myntra', 'Amazon':'Amazon'};
+// Only these three have a clean three-way correspondence across all of
+// Sales/Returns/Ad Spend/COGS - Flipkart and Ajio have no ad-spend
+// bucket at all, so they're left out of the filter rather than shown
+// with a silently-wrong ₹0 ad spend.
+const OVERVIEW_FILTERABLE_CHANNELS = ['Website', 'Myntra', 'Amazon'];
+
 /** Sums units-dispatched x per-category cost for whatever months are
- * selected (or every month accumulated so far, if none are). Returns
+ * selected (or every month accumulated so far, if none are). channelFilter
+ * is a Sales-page channel label ('Website'/'Myntra'/'Amazon') or null for
+ * all channels - translated to dispatch's own channel naming via
+ * DISPATCH_TO_SALES_CHANNEL before filtering, since category_trend stores
+ * dispatch's raw channel names, not the Sales page's labels. Returns
  * {cogs, unitsCosted, unitsUncosted} - unitsUncosted counts entries whose
  * category isn't in CATEGORY_COST (shouldn't normally happen, since
  * category_trend already excludes "Blank" server-side, but this stays
  * defensive in case a category name ever drifts out of sync between the
  * backend and this map). */
-function computeCogs(monthsSel){
+function computeCogs(monthsSel, channelFilter){
   const monthSet = monthsSel && monthsSel.length ? new Set(monthsSel) : null;
   const trend = dispatchData().category_trend || [];
   let cogs = 0, unitsCosted = 0, unitsUncosted = 0;
   trend.forEach(e=>{
     if(monthSet && !monthSet.has(e.date.slice(0,7))) return;
+    if(channelFilter && DISPATCH_TO_SALES_CHANNEL[e.channel]!==channelFilter) return;
     const unitCost = CATEGORY_COST[e.category];
     if(unitCost===undefined){ unitsUncosted += e.qty; return; }
     cogs += unitCost * e.qty;
@@ -1695,8 +1719,21 @@ function renderGstPage(monthsSel){
 }
 
 /* ============ OVERVIEW (period-filterable, separate from the other unfiltered tabs) ============ */
+let overviewChannelFilter = null; // null = all channels, or 'Website'/'Myntra'/'Amazon'
+
+function renderOverviewChannelPicker(){
+  const wrap = document.getElementById('overview-channel-picker');
+  if(!wrap) return;
+  const chip = (label, value) => {
+    const active = overviewChannelFilter === value;
+    return `<span onclick="overviewChannelFilter=${value===null?'null':`'${value}'`};renderOverview(selectedMonthsArr('overview'))" style="cursor:pointer;display:inline-flex;align-items:center;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;border:1px solid ${active?'rgba(122,31,46,0.3)':'var(--border)'};background:${active?'var(--gold-dim)':'var(--surface-2)'};color:${active?'var(--gold)':'var(--text-2)'}">${label}</span>`;
+  };
+  wrap.innerHTML = chip('All Channels', null) + OVERVIEW_FILTERABLE_CHANNELS.map(c=>chip(c, c)).join('');
+}
+
 function renderOverview(monthsSel){
   if(!DATA) return;
+  renderOverviewChannelPicker();
   const months = monthsInData();
   const periodMonths = monthsSel && monthsSel.length ? [...monthsSel].sort() : months;
   const mLabels = periodMonths.map(monthLabel);
@@ -1713,8 +1750,9 @@ function renderOverview(monthsSel){
   const expenseCodes = expenseCodesRaw.filter(c=>c!==AD_SPEND_CODE && !purchaseSet.has(c) && !confoundedSet.has(c));
   const vendorCodes = codesByAtype('113');
 
-  const totalRevenue = Object.values(byChannel.totals).reduce((a,b)=>a+b,0);
+  const chFilter = overviewChannelFilter;
   const byChannelReturns = salesReturnByChannel(monthsSel);
+  const adAgg = adSpendByChannel(monthsSel);
   // totalRevenue is TRUE gross now (see aggregateSalesGstCorrected) -
   // returns need the same GST_MULTIPLIER applied here to sit on the same
   // basis before being subtracted, otherwise this ends up close to right
@@ -1724,13 +1762,23 @@ function renderOverview(monthsSel){
   // again here double-counted them - confirmed against real numbers,
   // this was showing a ₹2.14L loss for a period that was actually a
   // ₹1.33L profit, a gap exactly matching that period's total returns.
-  const totalReturns = Math.abs(Object.values(byChannelReturns.totals).reduce((a,b)=>a+b,0)) * GST_MULTIPLIER;
-  const totalAds = Object.values(adSpendByChannel(monthsSel).totals).reduce((a,b)=>a+b,0);
+  const totalRevenue = chFilter ? (byChannel.totals[chFilter]||0) : Object.values(byChannel.totals).reduce((a,b)=>a+b,0);
+  const totalReturns = Math.abs(chFilter ? (byChannelReturns.totals[chFilter]||0) : Object.values(byChannelReturns.totals).reduce((a,b)=>a+b,0)) * GST_MULTIPLIER;
+  const totalAds = chFilter ? (adAgg.totals[SALES_CHANNEL_TO_AD_LABEL[chFilter]]||0) : Object.values(adAgg.totals).reduce((a,b)=>a+b,0);
   const totalPurchases = totalPurchasesForPeriod(monthsSel);
   const totalExpenses = totalForPeriod(expenseCodes,'dr',monthsSel) - totalForPeriod(expenseCodes,'cr',monthsSel);
-  const cogsInfo = computeCogs(monthsSel);
+  const cogsInfo = computeCogs(monthsSel, chFilter);
   const totalCogs = cogsInfo.cogs;
-  const netProfit = totalRevenue - totalReturns - totalExpenses - totalAds - totalCogs;
+  // Operating Expenses and Purchases are company-wide ledger categories
+  // (rent, salaries, etc.) with no reliable per-channel split - a single
+  // "Rent" line doesn't say how much of it was "Myntra's rent". Rather
+  // than fake an allocation, a channel filter drops them from the net
+  // figure entirely and the figure is relabeled "Channel Contribution"
+  // instead of "Net Profit", so it's not mistaken for a full P&L.
+  const netProfit = chFilter
+    ? (totalRevenue - totalReturns - totalAds - totalCogs)
+    : (totalRevenue - totalReturns - totalExpenses - totalAds - totalCogs);
+
 
   const bankSumsAll = sumSeries(bankCodes, months, 'netdr', false);
   let running=0; const bankCumAll={};
@@ -1747,13 +1795,13 @@ function renderOverview(monthsSel){
     : `${monthLabel(months[0])} – ${monthLabel(months[months.length-1])}`;
 
   document.getElementById('kpiGrid').innerHTML = `
-    <div class="kpi-card"><div class="kpi-label">Total Sales</div><div class="kpi-value credit">${fmtSigned(totalRevenue)}</div><div class="kpi-note">All channels, selected period</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Sales</div><div class="kpi-value credit">${fmtSigned(totalRevenue)}</div><div class="kpi-note">${chFilter||'All channels'}, selected period</div></div>
     <div class="kpi-card"><div class="kpi-label">Total Returns</div><div class="kpi-value debit">${fmtSigned(totalReturns)}</div><div class="kpi-note">${totalRevenue?(totalReturns/totalRevenue*100).toFixed(1):'0'}% return rate</div></div>
-    <div class="kpi-card"><div class="kpi-label">Total Purchases</div><div class="kpi-value debit">${fmtSigned(totalPurchases)}</div><div class="kpi-note">Goods bought, informational only — not in Net Profit below</div></div>
-    <div class="kpi-card"><div class="kpi-label">Total Expenses</div><div class="kpi-value debit">${fmtSigned(totalExpenses)}</div><div class="kpi-note">Operating costs only · ${totalRevenue?(totalExpenses/totalRevenue*100).toFixed(1):'0'}% of sales</div></div>
-    <div class="kpi-card"><div class="kpi-label">Total Ad Spend</div><div class="kpi-value debit">${fmtSigned(totalAds)}</div><div class="kpi-note">${totalRevenue?(totalAds/totalRevenue*100).toFixed(1):'0'}% of sales</div></div>
-    <div class="kpi-card"><div class="kpi-label">Cost of Goods Sold</div><div class="kpi-value debit">${fmtSigned(totalCogs)}</div><div class="kpi-note">${cogsInfo.unitsCosted} units dispatched × category cost${cogsInfo.unitsUncosted?` · ${cogsInfo.unitsUncosted} units uncategorized, excluded`:''}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Net (Profit / Loss)</div><div class="kpi-value ${netProfit>=0?'credit':'debit'}">${fmtSigned(netProfit)}</div><div class="kpi-note">Sales − returns − expenses − ad spend − COGS (excludes purchases)</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Purchases</div><div class="kpi-value debit">${fmtSigned(totalPurchases)}</div><div class="kpi-note">Goods bought, company-wide — not in the net figure below</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Expenses</div><div class="kpi-value debit">${fmtSigned(totalExpenses)}</div><div class="kpi-note">${chFilter?'Company-wide — no per-channel split, not in the net figure below':`Operating costs only · ${totalRevenue?(totalExpenses/totalRevenue*100).toFixed(1):'0'}% of sales`}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Ad Spend</div><div class="kpi-value debit">${fmtSigned(totalAds)}</div><div class="kpi-note">${chFilter?`${chFilter} (${SALES_CHANNEL_TO_AD_LABEL[chFilter]} vendor)`:(totalRevenue?(totalAds/totalRevenue*100).toFixed(1)+'% of sales':'0% of sales')}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Cost of Goods Sold</div><div class="kpi-value debit">${fmtSigned(totalCogs)}</div><div class="kpi-note">${cogsInfo.unitsCosted} units dispatched × category cost${cogsInfo.unitsUncosted?` · ${cogsInfo.unitsUncosted} uncategorized, excluded`:''}</div></div>
+    <div class="kpi-card"><div class="kpi-label">${chFilter?'Channel Contribution':'Net (Profit / Loss)'}</div><div class="kpi-value ${netProfit>=0?'credit':'debit'}">${fmtSigned(netProfit)}</div><div class="kpi-note">${chFilter?'Sales − returns − ad spend − COGS (excludes company-wide expenses & purchases)':'Sales − returns − expenses − ad spend − COGS (excludes purchases)'}</div></div>
     <div class="kpi-card"><div class="kpi-label">Net Bank Position</div><div class="kpi-value ${netBank>=0?'credit':'debit'}">${fmtSigned(netBank)}</div><div class="kpi-note">HDFC, as of period end</div></div>
     <div class="kpi-card"><div class="kpi-label">Vendor Payables</div><div class="kpi-value gold">${fmtSigned(topVendorsUpTo.reduce((s,[,v])=>s+v,0))}</div><div class="kpi-note">Outstanding, top 10, as of period end</div></div>`;
 
